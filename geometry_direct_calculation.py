@@ -288,14 +288,15 @@ def lines_intersect(line1, line2):
 #         return np.array(list(map(lambda y: get_one_point_y(y, aa, bb, cc, h, k, edge), point_y)))
 
 
-def wavelength_bragg(instrument: InstrumentContext, scattering_2theta, order_parameter=1):
+def wavelength_bragg(geo_ctx: GeometryContext, instrument: InstrumentContext, analyser_point, order_parameter=1):
     # gives the wavelength from the Bragg's law
+    scattering_2theta = analyser_twotheta(geo_ctx=geo_ctx, instrument=instrument, analyser_point=analyser_point)
     return 2. * instrument.pg_lattice_distance * np.sin(scattering_2theta / 2.) / float(order_parameter)
 
 
-def wavenumber_bragg(instrument: InstrumentContext, scattering_2theta, order_parameter=1):
+def wavenumber_bragg(geo_ctx: GeometryContext, instrument: InstrumentContext, analyser_point, order_parameter=1):
     # gives the wave number from the Bragg's law
-    wavelength = wavelength_bragg(instrument=instrument, scattering_2theta=scattering_2theta,
+    wavelength = wavelength_bragg(geo_ctx=geo_ctx, instrument=instrument, analyser_point=analyser_point,
                                   order_parameter=order_parameter)
     return 2. * np.pi / wavelength
 
@@ -442,7 +443,7 @@ def get_q_vector(outgoing_k):
     return q_vector
 
 
-def get_kf(kf_norm, azimuthal, polar):
+def get_kf_vector(kf_norm, azimuthal, polar):
     """
     to calculate the full vector of k_f (the wave vector after scattering at the sample and before the analyser)
     :param kf_norm: the norm of k_f
@@ -576,26 +577,26 @@ points_x, points_y = geometryctx.analyser_points
 #                          points_analyser_y=points_analyser_y)
 
 # to calculate the scattering angle 2theta_A for each point on the analyser
-all_scattering_2theta = np.array(
-    list(
-        map(lambda x, y: analyser_twotheta(geo_ctx=geometryctx, instrument=instrumentctx,
-                                           analyser_point=[x, y]),
-            points_x, points_y)))
-
-largest_2theta_position = np.argmax(all_scattering_2theta)
-largest_2theta = all_scattering_2theta[largest_2theta_position]
-smallest_2theta_position = np.argmin(all_scattering_2theta)
-smallest_2theta = all_scattering_2theta[smallest_2theta_position]
-print("Scattering angle 2theta: maximum {:5.2f}degrees, minimum {:5.2f}degrees".format(np.rad2deg(largest_2theta),
-                                                                                       np.rad2deg(smallest_2theta)))
+# all_scattering_2theta = np.array(
+#     list(
+#         map(lambda x, y: analyser_twotheta(geo_ctx=geometryctx, instrument=instrumentctx,
+#                                            analyser_point=[x, y]),
+#             points_x, points_y)))
+#
+# largest_2theta_position = np.argmax(all_scattering_2theta)
+# largest_2theta = all_scattering_2theta[largest_2theta_position]
+# smallest_2theta_position = np.argmin(all_scattering_2theta)
+# smallest_2theta = all_scattering_2theta[smallest_2theta_position]
+# print("Scattering angle 2theta: maximum {:5.2f}degrees, minimum {:5.2f}degrees".format(np.rad2deg(largest_2theta),
+#                                                                                        np.rad2deg(smallest_2theta)))
 
 # to calculate the wavelength and energy
-all_wavelength = wavelength_bragg(instrument=instrumentctx, scattering_2theta=all_scattering_2theta)
-print("Wavelength: maximum {:5.2f}AA, minimum {:5.2f}AA".format(np.max(all_wavelength) * 1e10,
-                                                                np.min(all_wavelength) * 1e10))
-
-all_energy_SI, all_energy_eV = wavelength_to_joule(all_wavelength), wavelength_to_eV(all_wavelength)
-print("energy: maximum {:5.2f}meV, minimum {:5.2f}meV".format(np.max(all_energy_eV) * 1e3, np.min(all_energy_eV) * 1e3))
+# all_wavelength = wavelength_bragg(instrument=instrumentctx, scattering_2theta=all_scattering_2theta)
+# print("Wavelength: maximum {:5.2f}AA, minimum {:5.2f}AA".format(np.max(all_wavelength) * 1e10,
+#                                                                 np.min(all_wavelength) * 1e10))
+#
+# all_energy_SI, all_energy_eV = wavelength_to_joule(all_wavelength), wavelength_to_eV(all_wavelength)
+# print("energy: maximum {:5.2f}meV, minimum {:5.2f}meV".format(np.max(all_energy_eV) * 1e3, np.min(all_energy_eV) * 1e3))
 
 plt.figure(1)
 ax = plt.gca()
@@ -700,12 +701,12 @@ all_dqz = []
 
 for theta in azimuthal_angles:
     for i in range(len(points_x)):
-        kf = wavenumber_bragg(instrument=instrumentctx, scattering_2theta=all_scattering_2theta[i])
         x = points_x[i]
         y = points_y[i]
+        kf = wavenumber_bragg(geo_ctx=geometryctx, instrument=instrumentctx, analyser_point=[x, y])
         phi = np.arctan(y / x)  # the polar angle of one point
-        kf_vector = get_kf(kf_norm=kf, azimuthal=theta,
-                           polar=phi)  # the kf-vector changes is determined by the azimuthal and polar angles
+        kf_vector = get_kf_vector(kf_norm=kf, azimuthal=theta,
+                                  polar=phi)  # the kf-vector changes is determined by the azimuthal and polar angles
         q_vector = get_q_vector(kf_vector)  # q-vector is determined by the kf-vector
         qxy = np.sqrt(np.sum(np.square(q_vector[:2])))  # horizontal component of q-vector
         qz = q_vector[2]  # vertical component of q-vector

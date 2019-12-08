@@ -348,8 +348,9 @@ def get_delta_phi(geo_ctx: GeometryContext, instrument: InstrumentContext, analy
     return analyser_divergence
 
 
-def get_resolution_e(geo_ctx: GeometryContext, instrument: InstrumentContext, kf, analyser_point):
-    delta_kf = delta_kf_bragg(geo_ctx, instrument, analyser_point=analyser_point, kf=kf)  # kf: outgoing wave number
+def get_de_e(geo_ctx: GeometryContext, instrument: InstrumentContext, analyser_point):
+    kf = wavenumber_bragg(geo_ctx=geo_ctx, instrument=instrument, analyser_point=analyser_point)  # outgoing wave number
+    delta_kf = delta_kf_bragg(geo_ctx, instrument, analyser_point=analyser_point, kf=kf)
     return 2. * delta_kf / kf
 
 
@@ -500,6 +501,67 @@ def plot_analyser_comparison(points_x, points_y, points_analyser_x, points_analy
     plt.text(x=0.1, y=-0.4, s="Focus")
     plt.savefig("analyser_geometry.pdf", bbox_inches='tight')
     plt.close(10)
+
+
+def plot_whole_geometry(geo_ctx: GeometryContext, instrument: InstrumentContext):
+    def plot_for_analyser_point(instrument: InstrumentContext, analyser_point, detector_point):
+        energy_ev = wavelength_to_eV(
+            wavelength=wavelength_bragg(instrument=instrument, analyser_point=analyser_point, geo_ctx=geo_ctx))
+        e_resolution_ev = get_de_e(geo_ctx=geo_ctx, analyser_point=analyser_point, instrument=instrument)
+        e_resolution_ev *= energy_ev
+
+        line_sp_plot = ([geo_ctx.sample_point[0], analyser_point[0]], [geo_ctx.sample_point[1], analyser_point[1]])
+        line_pf_plot = ([analyser_point[0], detector_point[0]], [analyser_point[1], detector_point[1]])
+        plt.plot(*line_sp_plot, color='#17becf')
+        plt.plot(*line_pf_plot, color='#17becf')
+
+        line_sp_plot = ([geo_ctx.sample_point[0], -analyser_point[0]], [geo_ctx.sample_point[1], analyser_point[1]])
+        line_pf_plot = ([-analyser_point[0], -detector_point[0]], [analyser_point[1], detector_point[1]])
+        plt.plot(*line_sp_plot, color='#17becf')
+        plt.plot(*line_pf_plot, color='#17becf')
+
+        plt.plot(analyser_point[0], analyser_point[1], "ko")
+        plt.text(x=-analyser_point[0] - 0.3, y=analyser_point[1], s="{:5.2f}".format(energy_ev * 1e3))
+        plt.text(x=analyser_point[0] + 0.1, y=analyser_point[1], s="{:5.2f}".format(e_resolution_ev * 1e6))
+
+    def plot_detectors(geo_ctx: GeometryContext):
+        detector_x, detector_y = geo_ctx.detector_points
+        plt.plot(detector_x, detector_y, ".", color='#8c564b')
+        plt.plot(-detector_x, detector_y, ".", color='#8c564b')
+
+    # first plot the analyser on both sides
+    plt.plot(geo_ctx.analyser_points[0], geo_ctx.analyser_points[1], color='#1f77b4', linewidth=5)
+    plt.plot(-geo_ctx.analyser_points[0], geo_ctx.analyser_points[1], color='#1f77b4', linewidth=5)
+    plt.xlabel("x axis (m)")
+    plt.ylabel("y axis (m)")
+
+    # mark the sample position
+    plt.plot(0, 0, "ro")
+    plt.text(x=-0.275, y=-0.25, s="Sample", fontsize=15)
+
+    plt.text(x=-0.7, y=0.75, s=r"$E$(meV)")
+    plt.text(x=0.5, y=0.75, s=r"$\Delta E$($\mu$eV)")
+
+    first_point_analyser = [geo_ctx.analyser_points[0][0], geo_ctx.analyser_points[1][0]]
+    first_point_detector = [geo_ctx.detector_points[0][0], geo_ctx.detector_points[1][0]]
+
+    last_point_analyser = [geo_ctx.analyser_points[0][-1], geo_ctx.analyser_points[1][-1]]
+    last_point_detector = [geo_ctx.detector_points[0][-1], geo_ctx.detector_points[1][-1]]
+
+    plot_for_analyser_point(instrument=instrument, analyser_point=first_point_analyser,
+                            detector_point=first_point_detector)
+    plot_for_analyser_point(instrument=instrument, analyser_point=last_point_analyser,
+                            detector_point=last_point_detector)
+
+    index_largest_energy = np.argmax(np.array(list(
+        map(lambda x, y: wavenumber_bragg(geo_ctx=geo_ctx, instrument=instrument, analyser_point=[x, y]),
+            geo_ctx.analyser_points[0], geo_ctx.analyser_points[1]))))
+    plot_for_analyser_point(instrument=instrument, analyser_point=[geo_ctx.analyser_points[0][index_largest_energy],
+                                                                   geo_ctx.analyser_points[1][index_largest_energy]],
+                            detector_point=[geo_ctx.detector_points[0][index_largest_energy],
+                                            geo_ctx.detector_points[1][index_largest_energy]])
+    plt.tight_layout()
+    plt.savefig('Mushroom_Geometry_OppsiteSide.pdf', bbox_inches='tight')
 
 
 def get_resolution_robbewley(geo_ctx: GeometryContext, instrument: InstrumentContext, all_qxy, all_qz):

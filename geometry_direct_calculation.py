@@ -53,11 +53,13 @@ class GeometryContext(object):
 
         if side == "same":
             self.focus_point = (0.7, -0.7)  # m
+            self.filename_geometry = 'Geometry_SameSide.pdf'
             self.filename_horizontal = 'QResolution_Horizontal_SameSide.pdf'
             self.filename_vertical = 'QResolution_Vertical_SameSide.pdf'
             self.plot_ylim = [-1.3, 0.9]
         elif side == "opposite":
             self.focus_point = (0.15, -0.45)  # m
+            self.filename_geometry = 'Geometry_OppositeSide.pdf'
             self.filename_horizontal = 'QResolution_Horizontal_OppositeSide.pdf'
             self.filename_vertical = 'QResolution_Vertical_OppositeSide.pdf'
             self.plot_ylim = [-1.1, 0.9]
@@ -427,23 +429,14 @@ def plot_whole_geometry(geo_ctx: GeometryContext, instrument: InstrumentContext)
         plt.plot(*line_pf_plot, color='#17becf')
 
         plt.plot(analyser_point[0], analyser_point[1], "ko")
-        plt.text(x=-analyser_point[0] - 0.3, y=analyser_point[1], s="{:5.2f}".format(energy_ev * 1e3))
+        plt.text(x=-analyser_point[0] - 0.35, y=analyser_point[1], s="{:5.2f}".format(energy_ev * 1e3))
         plt.text(x=analyser_point[0] + 0.1, y=analyser_point[1], s="{:5.2f}".format(e_resolution_ev * 1e6))
-
-    def plot_detectors(geo_ctx: GeometryContext):
-        detector_x, detector_y = geo_ctx.detector_points
-        plt.plot(detector_x, detector_y, ".", color='#8c564b')
-        plt.plot(-detector_x, detector_y, ".", color='#8c564b')
 
     # first plot the analyser on both sides
     plt.plot(geo_ctx.analyser_points[0], geo_ctx.analyser_points[1], color='#1f77b4', linewidth=5)
     plt.plot(-geo_ctx.analyser_points[0], geo_ctx.analyser_points[1], color='#1f77b4', linewidth=5)
-    plt.xlabel("x axis (m)")
-    plt.ylabel("y axis (m)")
-
-    # mark the sample position
-    plt.plot(0, 0, "ro")
-    plt.text(x=-0.275, y=-0.25, s="Sample", fontsize=15)
+    plt.xlabel("Radial axis (m)")
+    plt.ylabel("Vertical axis (m)")
 
     plt.text(x=-0.7, y=0.75, s=r"$E$(meV)")
     plt.text(x=0.5, y=0.75, s=r"$\Delta E$($\mu$eV)")
@@ -466,8 +459,20 @@ def plot_whole_geometry(geo_ctx: GeometryContext, instrument: InstrumentContext)
                                                                    geo_ctx.analyser_points[1][index_largest_energy]],
                             detector_point=[geo_ctx.detector_points[0][index_largest_energy],
                                             geo_ctx.detector_points[1][index_largest_energy]])
+
+    # mark the position of the sample and focus, and plot the detector
+    plt.plot(*geo_ctx.sample_point, "ro")
+    plt.text(x=-0.275, y=-0.25, s="Sample", fontsize=15)
+    plt.plot(*geo_ctx.focus_point, "ro", alpha=0.5)
+    plt.text(x=0.75, y=-0.75, s="Focus", fontsize=15)
+    plt.plot([first_point_detector[0], last_point_detector[0]], [first_point_detector[1], last_point_detector[1]],
+             color='#8c564b', linewidth=5)
+    plt.plot([-first_point_detector[0], -last_point_detector[0]], [first_point_detector[1], last_point_detector[1]],
+             color='#8c564b', linewidth=5)
+
     plt.tight_layout()
-    plt.savefig('Mushroom_Geometry_OppsiteSide.pdf', bbox_inches='tight')
+    plt.savefig(geo_ctx.filename_geometry, bbox_inches='tight')
+    plt.close(1)
 
 
 def get_resolution_robbewley(geo_ctx: GeometryContext, instrument: InstrumentContext, all_qxy, all_qz):
@@ -518,6 +523,60 @@ def get_resolution_robbewley(geo_ctx: GeometryContext, instrument: InstrumentCon
     return np.array(all_delta_qxy), np.array(all_delta_qz)
 
 
+def plot_resolution(geo_ctx: GeometryContext, all_qxy, all_dqxy, all_qz, all_dqz):
+    # plot the horizontal component of the q-resolution calculated by us
+    plt.figure(2)
+    plt.plot(all_qxy * 1e-10, all_dqxy * 1e-10, '.')
+    plt.xlabel(r"$Q_{xy}$ (Angstrom -1)")
+    plt.ylabel(r"$\Delta Q_{xy}$ (Angstrom -1)")
+    plt.title("Q resolution - horizontal")
+    plt.grid()
+    plt.savefig(geo_ctx.filename_horizontal, bbox_inches='tight')
+    plt.close(2)
+
+    # plot the vertical component of the q-resolution calculated by us
+    plt.figure(3)
+    plt.plot(all_qz * 1e-10, all_dqz * 1e-10, '.')
+    plt.xlabel(r"$Q_{z}$ (Angstrom -1)")
+    plt.ylabel(r"$\Delta Q_{z}$ (Angstrom -1)")
+    plt.title("Q resolution - vertical")
+    plt.grid()
+    plt.savefig(geo_ctx.filename_vertical, bbox_inches='tight')
+    plt.close(3)
+
+
+def plot_comparison(all_qxy, all_dqxy, all_delta_qxy_rob, all_qz, all_dqz, all_delta_qz_rob):
+    # compare the horizontal component of the q-resolution calculated by us and by Rob Bewley
+    plt.figure(4)
+    plt.subplot(121)
+    plt.plot(all_qxy * 1e-10, all_dqxy * 1e-10, '.')
+    plt.xlabel(r"$Q_{xy}$ (Angstrom -1)")
+    plt.ylabel(r"$\Delta Q_{xy}$ (Angstrom -1)")
+    plt.grid()
+    plt.subplot(122)
+    plt.plot(all_qxy * 1e-10, all_delta_qxy_rob * 1e-10, '.')
+    plt.xlabel(r"$Q_{xy}$ (Angstrom -1)")
+    plt.grid()
+    plt.tight_layout()
+    plt.savefig("Comparison_Horizontal.pdf", bbox_inches='tight')
+    plt.close(4)
+
+    # compare the vertical component of the q-resolution calculated by us and by Rob Bewley
+    plt.figure(5)
+    plt.subplot(121)
+    plt.plot(all_qz * 1e-10, all_dqz * 1e-10, '.')
+    plt.xlabel(r"$Q_{z}$ (Angstrom -1)")
+    plt.ylabel(r"$\Delta Q_{z}$ (Angstrom -1)")
+    plt.grid()
+    plt.subplot(122)
+    plt.plot(all_qz * 1e-10, all_delta_qz_rob * 1e-10, '.')
+    plt.xlabel(r"$Q_{z}$ (Angstrom -1)")
+    plt.grid()
+    plt.tight_layout()
+    plt.savefig("Comparison_Vertical.pdf", bbox_inches='tight')
+    plt.close(5)
+
+
 geometryctx = GeometryContext()
 instrumentctx = InstrumentContext()
 
@@ -547,7 +606,6 @@ all_dqxy = []
 all_dqz = []
 
 # calculate the q-resolution for each segment on the analyser, which gives different q-vectors
-
 for i in range(len(geometryctx.analyser_points[0])):
     # calculates the resolution in the horizontal plane and in the vertical direction.
     # qxy and qz have different dimensions!
@@ -574,72 +632,9 @@ all_dqxy = np.array(all_dqxy)
 all_dqz = np.array(all_dqz)
 
 # plot the geometry of the analyser, detector, sample and focus
-plt.figure(1)
-ax = plt.gca()
-ax.spines['right'].set_visible(False)
-ax.spines['top'].set_visible(False)
-plt.plot(*geometryctx.analyser_points)
-plt.legend(r"Segments with 1x1 cm$^2$")
-plt.text(0.3, -0.3, "Number of segments in one cut-plane: {:d}".format(len(geometryctx.analyser_points[0])))
-plt.xlabel("x axis (m)")
-plt.ylabel("y axis (m)")
-plt.plot(*geometryctx.sample_point, "ro")
-plt.plot(*geometryctx.focus_point, "ro")
-plt.plot(*geometryctx.detector_points)
-plt.text(x=0, y=-0.05, s="Sample")
-plt.text(x=0.1, y=-0.4, s="Focus")
-plt.savefig("analyser_geometry_check.pdf", bbox_inches='tight')
-plt.close(1)
 
-# plot the horizontal component of the q-resolution calculated by us
-plt.figure(2)
-plt.plot(all_qxy * 1e-10, all_dqxy * 1e-10, '.')
-plt.xlabel(r"$Q_{xy}$ (Angstrom -1)")
-plt.ylabel(r"$\Delta Q_{xy}$ (Angstrom -1)")
-plt.title("Q resolution - horizontal")
-plt.grid()
-plt.savefig(geometryctx.filename_horizontal, bbox_inches='tight')
-plt.close(2)
 
-# plot the vertical component of the q-resolution calculated by us
-plt.figure(3)
-plt.plot(all_qz * 1e-10, all_dqz * 1e-10, '.')
-plt.xlabel(r"$Q_{z}$ (Angstrom -1)")
-plt.ylabel(r"$\Delta Q_{z}$ (Angstrom -1)")
-plt.title("Q resolution - vertical")
-plt.grid()
-plt.savefig(geometryctx.filename_vertical, bbox_inches='tight')
-plt.close(3)
+# all_delta_qxy_rob, all_delta_qz_rob = get_resolution_robbewley(geo_ctx=geometryctx, instrument=instrumentctx,
+#                                                                all_qxy=all_qxy, all_qz=all_qz)
 
-all_delta_qxy_rob, all_delta_qz_rob = get_resolution_robbewley(geo_ctx=geometryctx, instrument=instrumentctx,
-                                                               all_qxy=all_qxy, all_qz=all_qz)
-
-# compare the horizontal component of the q-resolution calculated by us and by Rob Bewley
-plt.figure(4)
-plt.subplot(121)
-plt.plot(all_qxy * 1e-10, all_dqxy * 1e-10, '.')
-plt.xlabel(r"$Q_{xy}$ (Angstrom -1)")
-plt.ylabel(r"$\Delta Q_{xy}$ (Angstrom -1)")
-plt.grid()
-plt.subplot(122)
-plt.plot(all_qxy * 1e-10, all_delta_qxy_rob * 1e-10, '.')
-plt.xlabel(r"$Q_{xy}$ (Angstrom -1)")
-plt.grid()
-plt.tight_layout()
-plt.savefig("Comparison_Horizontal.pdf", bbox_inches='tight')
-plt.close(4)
-
-# compare the vertical component of the q-resolution calculated by us and by Rob Bewley
-plt.figure(5)
-plt.subplot(121)
-plt.plot(all_qz * 1e-10, all_dqz * 1e-10, '.')
-plt.xlabel(r"$Q_{z}$ (Angstrom -1)")
-plt.ylabel(r"$\Delta Q_{z}$ (Angstrom -1)")
-plt.grid()
-plt.subplot(122)
-plt.plot(all_qz * 1e-10, all_delta_qz_rob * 1e-10, '.')
-plt.xlabel(r"$Q_{z}$ (Angstrom -1)")
-plt.grid()
-plt.tight_layout()
-plt.savefig("Comparison_Vertical.pdf", bbox_inches='tight')
-plt.close(5)
+plot_whole_geometry(geo_ctx=geometryctx, instrument=instrumentctx)

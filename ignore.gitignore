@@ -1,6 +1,11 @@
 target/
 .idea
+
+target/
 __pycache__
+
+
+target/
 venv
 
 target

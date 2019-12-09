@@ -1,8 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
-# from matplotlib.patches import Ellipse
-from helper import wavelength_to_joule, wavelength_to_eV, points_distance, get_angle
+from helper import wavelength_to_eV, points_distance, get_angle
 
 ZERO_TOL = 1e-6
 
@@ -37,9 +36,8 @@ def points_to_line(point1, point2):
 
 
 class GeometryContext(object):
-    def __init__(self):
+    def __init__(self, side="same"):
         self.sample_point = (0.0, 0.0)  # m
-        self.focus_point = (0.7, -0.7)  # m
 
         self.sample_size = 1e-2  # m
         self.focus_size = 4e-2  # m
@@ -53,8 +51,23 @@ class GeometryContext(object):
             -10.)  # radian, the slope of the line from the sample to the downmost point on the analyser
         self.start_distance = 0.8  # m, the distance from the sample to the upmost point of the analyser
 
-        # self._ellipse = (h, k, a)
+        if side == "same":
+            self.focus_point = (0.7, -0.7)  # m
+            self.filename_horizontal = 'QResolution_Horizontal_SameSide.pdf'
+            self.filename_vertical = 'QResolution_Vertical_SameSide.pdf'
+            self.plot_ylim = [-1.3, 0.9]
+        elif side == "opposite":
+            self.focus_point = (0.15, -0.45)  # m
+            self.filename_horizontal = 'QResolution_Horizontal_OppositeSide.pdf'
+            self.filename_vertical = 'QResolution_Vertical_OppositeSide.pdf'
+            self.plot_ylim = [-1.1, 0.9]
+        else:
+            raise RuntimeError("Given information invalid".format(side))
+
         self.analyser_points = self._generate_analyser_segments()
+
+        # if the analyser is generated as a part of an ideal ellipse:
+        # self._ellipse = (h, k, a)
         # self.analyser_ellipse_points = self._generate_analyser_ellipse()
 
         self.detector_line = [0.0, 1.0, -1.0]  # [0, 1, h]: h -> vertical position (m)
@@ -232,62 +245,6 @@ def lines_intersect(line1, line2):
         raise RuntimeError("The line parameters provided are not valid. Try again.")
 
 
-# def analyser_edges(focus, a, detector_line):
-#     def intersect_on_ellipse(aa, bb, cc, h, k, m):
-#         # gives the intersect of one line, y = mx, with the ellipse described by the parameters (aa, bb, cc, h, k)
-#         polynomial_parameters = np.empty(3)
-#         polynomial_parameters[0] = aa + bb * m + cc * m ** 2
-#         polynomial_parameters[1] = -2 * aa * h - bb * (m * h + k) - 2 * cc * m * k
-#         polynomial_parameters[2] = aa * h ** 2 + bb * h * k + cc * k ** 2 - 1
-#         x = np.roots(polynomial_parameters)
-#         x = x[x > 0]
-#         if len(x) == 1:
-#             x = x[0]
-#         elif len(x) == 0:
-#             raise RuntimeError("No x-component of the point has been found.")
-#         else:
-#             raise RuntimeError("Too many values of the x-component have been found.")
-#         y = m * x
-#         if abs(aa * (x - h) ** 2 + bb * (x - h) * (y - k) + cc * (y - k) ** 2 - 1) < ZERO_TOL:
-#             return [x, y]
-#         else:
-#             raise RuntimeError("Something wrong when solving the ellipse edge points.")
-#
-#     h, k = focus / 2.0
-#     aa, bb, cc, = get_ellipse_parameters(h, k, a)
-#
-#     edge_up = intersect_on_ellipse(aa, bb, cc, h, k, np.tan(np.deg2rad(50)))
-#     edge_down = intersect_on_ellipse(aa, bb, cc, h, k, np.tan(-np.deg2rad(10)))
-#     line_fd1 = get_line_through_points(focus, edge_up)
-#     line_fd2 = get_line_through_points(focus, edge_down)
-#     detector_in = get_intersect_two_lines(line_fd1, detector_line)
-#     detector_out = get_intersect_two_lines(line_fd2, detector_line)
-#     return edge_up, edge_down, detector_in, detector_out
-
-
-# def get_analyser_point(point_y, a, h, k, edge):
-#     def get_one_point_y(point_y, aa, bb, cc, h, k, edge):
-#         polynomial_parameters = np.empty(3)
-#         polynomial_parameters[0] = aa
-#         polynomial_parameters[1] = bb * (point_y - k)
-#         polynomial_parameters[2] = cc * (point_y - k) ** 2 - 1
-#         x = np.roots(polynomial_parameters) + h
-#         point_x = x[edge - 0.1 < x]
-#         if len(point_x) == 1:
-#             point_x = point_x[0]
-#         elif len(point_x) == 0:
-#             raise RuntimeError("No x-component of the point has been found, found {}.".format(x))
-#         else:
-#             raise RuntimeError("Too many values of the x-component have been found, found {}.".format(point_x))
-#         return point_x
-#
-#     aa, bb, cc = get_ellipse_parameters(a=a, h=h, k=k)
-#     if isinstance(point_y, float) is True:
-#         return get_one_point_y(point_y, aa, bb, cc, h, k, edge)
-#     else:
-#         return np.array(list(map(lambda y: get_one_point_y(y, aa, bb, cc, h, k, edge), point_y)))
-
-
 def wavelength_bragg(geo_ctx: GeometryContext, instrument: InstrumentContext, analyser_point, order_parameter=1):
     # gives the wavelength from the Bragg's law
     scattering_2theta = analyser_twotheta(geo_ctx=geo_ctx, instrument=instrument, analyser_point=analyser_point)
@@ -318,14 +275,6 @@ def angular_spread_analyser(geo_ctx: GeometryContext, instrument: InstrumentCont
     denominator = 4 * eta ** 2 + alpha_i ** 2 + alpha_f ** 2
 
     return np.sqrt(numerator / denominator)
-
-    # incoming_divergence, outgoing_divergence = \
-    #     get_divergence(sample=sample, analyser_point=analyser_point,
-    #                    focus=focus_point, sample_size=sample_size,
-    #                    focus_size=focus_size)
-    # return np.sqrt((
-    #                        incoming_divergence ** 2 * outgoing_divergence ** 2 + mosaic_analyser ** 2 * incoming_divergence ** 2 + mosaic_analyser ** 2 * outgoing_divergence ** 2) / (
-    #                        4 * mosaic_analyser ** 2 + incoming_divergence ** 2 + outgoing_divergence ** 2))
 
 
 def delta_kf_bragg(geo_ctx: GeometryContext, instrument: InstrumentContext, analyser_point, kf):
@@ -363,12 +312,6 @@ def divergence_analyser_point(geo_ctx: GeometryContext, analyser_point):
     divergence_out = geo_ctx.focus_size / distance_af
     return divergence_in, divergence_out
 
-    # distance_sample_analyser = euclidean_metric(point1=sample, point2=analyser_point)
-    # distance_analyser_focus = euclidean_metric(point1=analyser_point, point2=focus)
-    # incoming_divergence = np.arctan(sample_size / distance_sample_analyser)
-    # outgoing_divergence = np.arctan(focus_size / distance_analyser_focus)
-    # return incoming_divergence, outgoing_divergence
-
 
 def get_spread_from_detector(analyser_point, focus, detector, angular_spread_analyser, size_focus):
     if len(analyser_point) != 2:
@@ -388,60 +331,40 @@ def get_spread_from_detector(analyser_point, focus, detector, angular_spread_ana
     return spread_detector
 
 
-def get_resolution_q(geo_ctx: GeometryContext, instrument: InstrumentContext, kf, theta, analyser_point, ki=None):
-    """
-    def get_delta_theta(sample, analyser_point, focus_point):
-        sample_size = 1e-2  # m
-        focus_size = 4e-2  # m
-        incoming_divergence, outgoing_divergence = get_divergence(sample=sample, analyser_point=analyser_point,
-                                                                  focus=focus_point, sample_size=sample_size,
-                                                                  focus_size=focus_size)
-        return np.sqrt(incoming_divergence ** 2 + outgoing_divergence ** 2)
-    """
-
-    # if ki is not specified, the scattering is treated to be elastic
+def get_resolution_qxy(geo_ctx: GeometryContext, instrument: InstrumentContext, kf, phi, theta, analyser_point, qxy,
+                       ki=None):
     if ki is None:
         ki = kf
-
-    qxy = np.sqrt(np.sum(np.square([kf * np.cos(phi) * np.cos(theta) - ki, kf * np.cos(phi) * np.sin(theta)])))
-    # this is the denominator in the calculation later
-
     delta_kf = delta_kf_bragg(geo_ctx, instrument=instrument, analyser_point=analyser_point, kf=kf)
     delta_phi = get_delta_phi(geo_ctx, instrument=instrument, analyser_point=analyser_point)
     # delta_phi = np.sqrt(np.sum(np.square([divergence_analyser_point(geo_ctx, analyser_point=analyser_point)])))
     dtheta_sample = np.sqrt(np.sum(np.square([divergence_analyser_point(geo_ctx, analyser_point=analyser_point)])))
-    # dtheta_sample = instrument.analyser_segment / points_distance(geo_ctx.sample_point, analyser_point)
-    # dtheta_sample is the deviation of the azimuthal angle of the scattering at the sample,
-    # and it is calculated by the incoming and outgoing divergences of the beam
 
-    # derivatives in the form of: function_variable
     qxy_kf = np.cos(phi) * (kf * np.cos(phi) - ki * np.cos(theta)) / qxy
     qxy_phi = -kf * np.sin(phi) * (kf * np.cos(phi) - ki * np.cos(theta)) / qxy
     qxy_theta = ki * kf * np.cos(phi) * np.sin(theta) / qxy
-
     delta_qxy = np.sqrt(np.sum(np.square([qxy_kf * delta_kf, qxy_phi * delta_phi, qxy_theta * dtheta_sample])))
+    return delta_qxy
 
-    # derivatives in the form of: function_variable
+
+def get_resolution_qz(geo_ctx: GeometryContext, instrument: InstrumentContext, kf, phi, analyser_point):
+    delta_kf = delta_kf_bragg(geo_ctx, instrument=instrument, analyser_point=analyser_point, kf=kf)
+    delta_phi = get_delta_phi(geo_ctx, instrument=instrument, analyser_point=analyser_point)
+
     qz_kf = np.sin(phi)
     qz_phi = kf * np.cos(phi)
     delta_qz = np.sqrt(np.sum(np.square([qz_kf * delta_kf, qz_phi * delta_phi])))
+    return delta_qz
 
-    return delta_qxy, delta_qz
+
+def get_qxy(kf_vector):
+    ki_vector = np.array([np.linalg.norm(kf_vector), 0, 0])  # k_i is along x-axis and has the same magnitude as k_f
+    q_vector = kf_vector - ki_vector
+    return np.linalg.norm(q_vector[:2])
 
 
-def get_q_vector(outgoing_k):
-    """
-    to calculate the q-vector of the scattering at the sample, with the incoming wave vector defined along the x-axis.
-    The elastic scattering is considered in this case because the q-resolution independent of the energy will be +
-    calculated based on the result from this step
-    :param outgoing_k: k_f as a vector in 3D
-    :return: wave vector transfer as a vector in 3D
-    """
-    if np.shape(outgoing_k)[0] != 3:
-        raise RuntimeError("Given incoming wave vector {} invalid.".format(outgoing_k))
-    incoming_k = np.array([np.linalg.norm(outgoing_k), 0, 0])  # k_i is along x-axis and has the same magnitude as k_f
-    q_vector = outgoing_k - incoming_k
-    return q_vector
+def get_qz(kf, polar_angle):
+    return kf * np.sin(polar_angle)
 
 
 def get_kf_vector(kf_norm, azimuthal, polar):
@@ -462,23 +385,6 @@ def get_kf_vector(kf_norm, azimuthal, polar):
     kf = np.array([np.cos(polar) * np.cos(azimuthal), np.cos(polar) * np.sin(azimuthal), np.sin(polar)])
     kf *= kf_norm
     return kf
-
-
-def get_parameters(side):
-    if side == "same":
-        # focus = [0.7, -0.7]
-        filename_horizontal = 'Q_resolution_Horizontal.pdf'
-        filename_vertical = 'Q_resolution_Vertical.pdf'
-        plot_ylim = [-1.3, 0.9]
-    elif side == "oppisite":
-        # focus = [0.15, -0.45]
-        filename_horizontal = 'Q_resolution_Horizontal2.pdf'
-        filename_vertical = 'Q_resolution_Vertical2.pdf'
-        plot_ylim = [-1.1, 0.9]
-    else:
-        raise RuntimeError("Given information invalid".format(side))
-    return plot_ylim, filename_horizontal, filename_vertical
-    # return focus, plot_ylim, filename_horizontal, filename_vertical
 
 
 # to compare the analyser generated by the two different methods
@@ -565,6 +471,7 @@ def plot_whole_geometry(geo_ctx: GeometryContext, instrument: InstrumentContext)
 
 
 def get_resolution_robbewley(geo_ctx: GeometryContext, instrument: InstrumentContext, all_qxy, all_qz):
+    # TODO: change the sequence of the indices
     analyser_x, analyser_y = geo_ctx.analyser_points
     detector_x, detector_y = geo_ctx.detector_points
     if analyser_x.shape[0] != detector_x.shape[0]:
@@ -614,51 +521,7 @@ def get_resolution_robbewley(geo_ctx: GeometryContext, instrument: InstrumentCon
 geometryctx = GeometryContext()
 instrumentctx = InstrumentContext()
 
-# sample = [0, 0]
-# semi_major = 1.0  # semi-major axis of the ellipse
-side = "same"
-# side = "opposite"
-# focus, plot_ylim, filename_horizontal, filename_vertical, = get_parameters(side=side)
-plot_ylim, filename_horizontal, filename_vertical, = get_parameters(side=side)
-# ellipse_centre_x = focus[0] / 2.0
-# ellipse_centre_y = focus[1] / 2.0
-#
-# edge_up, edge_down, detector_in, detector_out = analyser_edges(focus=np.array(focus), a=semi_major,
-#                                                                detector_line=detector_line)
-# print("Edge points", edge_up, edge_down)
-
-# to generate the segments of 1x1 cm2 on the analyser
-points_x, points_y = geometryctx.analyser_points
-
-# to generate the points on the analyser ideally from the ellipse equation
-# points_analyser_y = np.linspace(edge_up[1], edge_down[1], number_points)
-# points_analyser_x = get_analyser_point(points_analyser_y, a=semi_major, h=ellipse_centre_x, k=ellipse_centre_y,
-#                                        edge=edge_up[0])
-
-# plot_analyser_comparison(points_x=points_x, points_y=points_y, points_analyser_x=points_analyser_x,
-#                          points_analyser_y=points_analyser_y)
-
-# to calculate the scattering angle 2theta_A for each point on the analyser
-# all_scattering_2theta = np.array(
-#     list(
-#         map(lambda x, y: analyser_twotheta(geo_ctx=geometryctx, instrument=instrumentctx,
-#                                            analyser_point=[x, y]),
-#             points_x, points_y)))
-#
-# largest_2theta_position = np.argmax(all_scattering_2theta)
-# largest_2theta = all_scattering_2theta[largest_2theta_position]
-# smallest_2theta_position = np.argmin(all_scattering_2theta)
-# smallest_2theta = all_scattering_2theta[smallest_2theta_position]
-# print("Scattering angle 2theta: maximum {:5.2f}degrees, minimum {:5.2f}degrees".format(np.rad2deg(largest_2theta),
-#                                                                                        np.rad2deg(smallest_2theta)))
-
-# to calculate the wavelength and energy
-# all_wavelength = wavelength_bragg(instrument=instrumentctx, scattering_2theta=all_scattering_2theta)
-# print("Wavelength: maximum {:5.2f}AA, minimum {:5.2f}AA".format(np.max(all_wavelength) * 1e10,
-#                                                                 np.min(all_wavelength) * 1e10))
-#
-# all_energy_SI, all_energy_eV = wavelength_to_joule(all_wavelength), wavelength_to_eV(all_wavelength)
-# print("energy: maximum {:5.2f}meV, minimum {:5.2f}meV".format(np.max(all_energy_eV) * 1e3, np.min(all_energy_eV) * 1e3))
+# points_x, points_y = geometryctx.analyser_points
 
 plt.figure(1)
 ax = plt.gca()
@@ -668,83 +531,7 @@ ax.spines['top'].set_visible(False)
 # ax.add_patch(ellipse)
 
 plt.xlim(-2, 2)
-plt.ylim(*plot_ylim)
-
-# plt.plot(points_analyser_x, points_analyser_y, color='#1f77b4', linewidth=5)
-# plt.plot(-points_analyser_x, points_analyser_y, color='#1f77b4', linewidth=5)
-# plt.xlabel("x axis (m)")
-# plt.ylabel("y axis (m)")
-
-# point0 = [points_analyser_x[smallest_2theta_position], points_analyser_y[smallest_2theta_position]]
-# point1 = [points_analyser_x[0], points_analyser_y[0]]
-# point2 = points_analyser_x[-1], points_analyser_y[-1]
-#
-# plt.text(x=-0.7, y=0.75, s=r"$E$(meV)")
-# plt.text(x=0.5, y=0.75, s=r"$\Delta E$($\mu$eV)")
-
-# resolution_e0 = get_resolution_e(kf=bragg_condition_wavenumber(scattering_2theta=smallest_2theta),
-#                                  analyser_point=point0, focus_point=focus, sample=sample)
-# resolution_e1 = get_resolution_e(kf=bragg_condition_wavenumber(scattering_2theta=all_scattering_2theta[0]),
-#                                  analyser_point=point0, focus_point=focus, sample=sample)
-# resolution_e2 = get_resolution_e(kf=bragg_condition_wavenumber(scattering_2theta=all_scattering_2theta[-1]),
-#                                  analyser_point=point0, focus_point=focus, sample=sample)
-
-# plt.plot(point0[0], point0[1], "ko")
-# plt.text(x=-point0[0] - 0.3, y=point0[1], s="{:5.2f}".format(all_energy_eV[smallest_2theta_position] * 1e3))
-# plt.text(x=point0[0] + 0.1, y=point0[1],
-#          s="{:5.2f}".format(all_energy_eV[smallest_2theta_position] * resolution_e0 * 1e6))
-#
-# plt.plot(point1[0], point1[1], "ko")
-# plt.text(x=-point1[0] - 0.3, y=point1[1], s="{:5.2f}".format(all_energy_eV[0] * 1e3))
-# plt.text(x=point1[0] + 0.1, y=point1[1], s="{:5.2f}".format(all_energy_eV[0] * resolution_e1 * 1e6))
-#
-# plt.plot(point2[0], point2[1], "ko")
-# plt.text(x=-point2[0] - 0.3, y=point2[1], s="{:5.2f}".format(all_energy_eV[-1] * 1e3))
-# plt.text(x=point2[0] + 0.1, y=point2[1], s="{:5.2f}".format(all_energy_eV[-1] * resolution_e2 * 1e6))
-#
-# line_sp0_plot = ([0, point0[0]], [0, point0[1]])
-# line_sp1_plot = ([0, point1[0]], [0, point1[1]])
-# line_sp2_plot = ([0, point2[0]], [0, point2[1]])
-#
-# line_p0f = get_line_through_points(point0, focus)
-# line_p1f = get_line_through_points(point1, focus)
-# line_p2f = get_line_through_points(point2, focus)
-#
-# detector0 = get_intersect_two_lines(line_p0f, detector_line)
-#
-# line_p0f_plot = ([point0[0], detector0[0]], [point0[1], detector0[1]])
-# line_p1f_plot = ([point1[0], detector_in[0]], [point1[1], detector_in[1]])
-# line_p2f_plot = ([point2[0], detector_out[0]], [point2[1], detector_out[1]])
-#
-# line_sp0_plot2 = ([0, -point0[0]], [0, point0[1]])
-# line_sp1_plot2 = ([0, -point1[0]], [0, point1[1]])
-# line_sp2_plot2 = ([0, -point2[0]], [0, point2[1]])
-# line_p0f_plot2 = ([-point0[0], -detector0[0]], [point0[1], detector0[1]])
-# line_p1f_plot2 = ([-point1[0], -detector_in[0]], [point1[1], detector_in[1]])
-# line_p2f_plot2 = ([-point2[0], -detector_out[0]], [point2[1], detector_out[1]])
-#
-# plt.plot(*line_sp0_plot, color='#17becf')
-# plt.plot(*line_sp1_plot, color='#17becf')
-# plt.plot(*line_sp2_plot, color='#17becf')
-# plt.plot(*line_p0f_plot, color='#17becf')
-# plt.plot(*line_p1f_plot, color='#17becf')
-# plt.plot(*line_p2f_plot, color='#17becf')
-#
-# plt.plot(*line_sp0_plot2, color='#17becf')
-# plt.plot(*line_sp1_plot2, color='#17becf')
-# plt.plot(*line_sp2_plot2, color='#17becf')
-# plt.plot(*line_p0f_plot2, color='#17becf')
-# plt.plot(*line_p1f_plot2, color='#17becf')
-# plt.plot(*line_p2f_plot2, color='#17becf')
-#
-# plt.plot([detector_in[0], detector_out[0]], [detector_in[1], detector_out[1]], color='#8c564b', linewidth=5)
-# plt.plot([-detector_in[0], -detector_out[0]], [detector_in[1], detector_out[1]], color='#8c564b', linewidth=5)
-#
-# plt.plot(0, 0, "ro")
-# plt.text(x=-0.275, y=-0.25, s="Sample", fontsize=15)
-#
-# plt.tight_layout()
-# plt.savefig('Mushroom_Geometry_OppsiteSide.pdf', bbox_inches='tight')
+plt.ylim(*geometryctx.plot_ylim)
 
 # generates the azimuthal angle elements based on the size of the analyser segments
 angle_one_segment = np.arcsin(instrumentctx.analyser_segment / geometryctx.start_distance)
@@ -761,23 +548,25 @@ all_dqz = []
 
 # calculate the q-resolution for each segment on the analyser, which gives different q-vectors
 
-for theta in azimuthal_angles:
-    for i in range(len(points_x)):
-        x = points_x[i]
-        y = points_y[i]
-        kf = wavenumber_bragg(geo_ctx=geometryctx, instrument=instrumentctx, analyser_point=[x, y])
-        phi = np.arctan(y / x)  # the polar angle of one point
+for i in range(len(geometryctx.analyser_points[0])):
+    # calculates the resolution in the horizontal plane and in the vertical direction.
+    # qxy and qz have different dimensions!
+    x = geometryctx.analyser_points[0][i]
+    y = geometryctx.analyser_points[1][i]
+    phi = np.arctan(y / x)  # the polar angle of one point
+    kf = wavenumber_bragg(geo_ctx=geometryctx, instrument=instrumentctx, analyser_point=[x, y])
+    qz = get_qz(kf=kf, polar_angle=phi)
+    delta_qz = get_resolution_qz(geo_ctx=geometryctx, instrument=instrumentctx, analyser_point=[x, y], kf=kf, phi=phi)
+    for theta in azimuthal_angles:
         kf_vector = get_kf_vector(kf_norm=kf, azimuthal=theta,
                                   polar=phi)  # the kf-vector changes is determined by the azimuthal and polar angles
-        q_vector = get_q_vector(kf_vector)  # q-vector is determined by the kf-vector
-        qxy = np.sqrt(np.sum(np.square(q_vector[:2])))  # horizontal component of q-vector
-        qz = q_vector[2]  # vertical component of q-vector
-        delta_qxy, delta_qz = get_resolution_q(analyser_point=[x, y], geo_ctx=geometryctx, instrument=instrumentctx,
-                                               theta=theta, kf=kf)
+        qxy = get_qxy(kf_vector=kf_vector)  # horizontal component of q-vector
+        delta_qxy = get_resolution_qxy(geo_ctx=geometryctx, instrument=instrumentctx, analyser_point=[x, y], kf=kf,
+                                       phi=phi, qxy=qxy, theta=theta)
         all_qxy.append(qxy)
-        all_qz.append(qz)
         all_dqxy.append(delta_qxy)
-        all_dqz.append(delta_qz)
+    all_qz.append(qz)
+    all_dqz.append(delta_qz)
 
 all_qxy = np.array(all_qxy)
 all_qz = np.array(all_qz)
@@ -789,9 +578,9 @@ plt.figure(1)
 ax = plt.gca()
 ax.spines['right'].set_visible(False)
 ax.spines['top'].set_visible(False)
-plt.plot(points_x, points_y)
+plt.plot(*geometryctx.analyser_points)
 plt.legend(r"Segments with 1x1 cm$^2$")
-plt.text(0.3, -0.3, "Number of segments in one cut-plane: {:d}".format(len(points_x)))
+plt.text(0.3, -0.3, "Number of segments in one cut-plane: {:d}".format(len(geometryctx.analyser_points[0])))
 plt.xlabel("x axis (m)")
 plt.ylabel("y axis (m)")
 plt.plot(*geometryctx.sample_point, "ro")
@@ -809,7 +598,7 @@ plt.xlabel(r"$Q_{xy}$ (Angstrom -1)")
 plt.ylabel(r"$\Delta Q_{xy}$ (Angstrom -1)")
 plt.title("Q resolution - horizontal")
 plt.grid()
-plt.savefig(filename_horizontal, bbox_inches='tight')
+plt.savefig(geometryctx.filename_horizontal, bbox_inches='tight')
 plt.close(2)
 
 # plot the vertical component of the q-resolution calculated by us
@@ -819,7 +608,7 @@ plt.xlabel(r"$Q_{z}$ (Angstrom -1)")
 plt.ylabel(r"$\Delta Q_{z}$ (Angstrom -1)")
 plt.title("Q resolution - vertical")
 plt.grid()
-plt.savefig(filename_vertical, bbox_inches='tight')
+plt.savefig(geometryctx.filename_vertical, bbox_inches='tight')
 plt.close(3)
 
 all_delta_qxy_rob, all_delta_qz_rob = get_resolution_robbewley(geo_ctx=geometryctx, instrument=instrumentctx,

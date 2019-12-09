@@ -1,0 +1,9 @@
+target/
+.idea
+__pycache__
+venv
+
+target
+*.pdf
+*.png
+*.txt

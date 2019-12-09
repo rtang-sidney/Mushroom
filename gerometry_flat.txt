@@ -1,5 +1,0 @@
-Edge points [0.5078814990168222, 0.6052696010654306] [1.4585923143722108, -0.2571891788778241]
-Scattering angle 2theta maximum 142.10degrees, minimum 112.02degrees
-Wavelength maximum  6.34AA, minimum  5.56AA
-energy maximum  2.65meV, minimum  2.04meV
-Resolution dQQ_para=0.295% to 1.007%, dQQ_perp=0.705% to 0.772%, dEE=0.585% to 2.008%

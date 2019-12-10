@@ -42,7 +42,6 @@ class GeometryContext(object):
         self.sample_size = 1e-2  # m
         self.focus_size = 4e-2  # m
 
-        self.semi_major = 1.0  # m
         self.ellipse_number = 100  # number of points to form the ellipse
 
         self.angle_plus = np.deg2rad(
@@ -50,6 +49,8 @@ class GeometryContext(object):
         self.angle_minus = np.deg2rad(
             -10.)  # radian, the slope of the line from the sample to the downmost point on the analyser
         self.start_distance = 0.8  # m, the distance from the sample to the upmost point of the analyser
+        self.start_point = [self.start_distance * np.cos(self.angle_plus),
+                            self.start_distance * np.sin(self.angle_plus)]
 
         if side == "same":
             self.focus_point = (0.7, -0.7)  # m
@@ -66,11 +67,13 @@ class GeometryContext(object):
         else:
             raise RuntimeError("Given information invalid".format(side))
 
+        self.semi_major = (points_distance(self.sample_point, self.start_point) + points_distance(self.focus_point,
+                                                                                                  self.start_point)) / 2.0
+
         self.analyser_points = self._generate_analyser_segments()
 
         # if the analyser is generated as a part of an ideal ellipse:
-        # self._ellipse = (h, k, a)
-        # self.analyser_ellipse_points = self._generate_analyser_ellipse()
+        self.analyser_ellipse_points = self._generate_analyser_ellipse()
 
         self.detector_line = [0.0, 1.0, -1.0]  # [0, 1, h]: h -> vertical position (m)
         self.detector_points = self._detector_from_analyser()
@@ -85,7 +88,7 @@ class GeometryContext(object):
         a = self.semi_major
         phi = np.arctan(k / h)  # rotational angle of the ellipse, positive sign = anti-clockwise
         c = abs(h / np.cos(phi))  # linear eccentricity, giving the distance of a focus to the ellipse centre
-        b = np.sqrt(np.subtract(x1=np.square(a), x2=np.square(c)))  # semi-minor axis
+        b = np.sqrt(a ** 2 - c ** 2)  # semi-minor axis
 
         # parameters of the ellipse after the rotation: aa = A, bb = B, cc = C
         # Ax^2 + Bxy + Cy^2 = 1
@@ -125,7 +128,7 @@ class GeometryContext(object):
     #     detector_out = get_intersect_two_lines(line_fd2, detector_line)
     #     return edge_up, edge_down, detector_in, detector_out
 
-    def _generate_analyser_segments(self, point_start=None):
+    def _generate_analyser_segments(self):
         # generates the analyser with a finite segment size
         def vector_bisector(vector1, vector2):
             vector1 = np.array(vector1)
@@ -135,18 +138,9 @@ class GeometryContext(object):
         def unit_vector(vector):
             return vector / np.linalg.norm(vector)
 
-        if point_start is None:
-            analyser_x = self.start_distance * np.cos(self.angle_plus)
-            analyser_y = self.start_distance * np.sin(self.angle_plus)
-        elif len(point_start) == 2:  # if the starting point is given by the edge point
-            analyser_x = point_start[0]
-            analyser_y = point_start[1]
-        else:
-            raise RuntimeError("Failed to generate the analyser segments from the given value.")
-
-        point_now = [analyser_x, analyser_y]
-        analyser_x = [analyser_x]
-        analyser_y = [analyser_y]
+        point_now = self.start_point
+        analyser_x = [self.start_point[0]]
+        analyser_y = [self.start_point[1]]
         while self.angle_minus - 0.01 < np.arctan(point_now[1] / point_now[0]) < self.angle_plus + 0.01:
             vector_sa = points_to_vector(point1=self.sample_point, point2=point_now)
             vector_af = points_to_vector(point1=point_now, point2=self.focus_point)
@@ -180,7 +174,7 @@ class GeometryContext(object):
 
     def _generate_analyser_ellipse(self):
         # generate the analyser as a part of an ideal ellipse
-        angles = np.linspace(self.angle_minus, self.angle_plus, num=self.ellipse_number)
+        angles = np.linspace(self.angle_plus, self.angle_minus, num=self.ellipse_number)
         analyser_x = []
         analyser_y = []
         for angle in angles:
@@ -399,15 +393,15 @@ def plot_analyser_comparison(points_x, points_y, points_analyser_x, points_analy
     plt.plot(points_analyser_x, points_analyser_y)
     plt.legend((r"Segments with 1x1 cm$^2$", "Ideal ellipse"))
     plt.text(0.3, -0.3, "Number of segments in one cut-plane: {:d}".format(len(points_x)))
-    plt.text(0.3, -0.35, "Largest deviation from the ideal ellipse: {:5.2f} m".format(np.linalg.norm(
-        points_to_vector([points_x[-1], points_y[-1]], [points_analyser_x[-1], points_analyser_y[-1]]))))
+    plt.text(0.3, -0.35, "Largest deviation from the ideal ellipse: {:5.2f} m".format(
+        points_distance([points_x[-1], points_y[-1]], [points_analyser_x[-1], points_analyser_y[-1]])))
     plt.xlabel("x axis (m)")
     plt.ylabel("y axis (m)")
     plt.plot(*geometryctx.sample_point, "ro")
     plt.plot(*geometryctx.focus_point, "ro")
     plt.text(x=0, y=-0.05, s="Sample")
     plt.text(x=0.1, y=-0.4, s="Focus")
-    plt.savefig("analyser_geometry.pdf", bbox_inches='tight')
+    plt.savefig("Geometry_Comparison.pdf", bbox_inches='tight')
     plt.close(10)
 
 
@@ -637,4 +631,7 @@ all_dqz = np.array(all_dqz)
 # all_delta_qxy_rob, all_delta_qz_rob = get_resolution_robbewley(geo_ctx=geometryctx, instrument=instrumentctx,
 #                                                                all_qxy=all_qxy, all_qz=all_qz)
 
-plot_whole_geometry(geo_ctx=geometryctx, instrument=instrumentctx)
+# plot_whole_geometry(geo_ctx=geometryctx, instrument=instrumentctx)
+plot_analyser_comparison(points_analyser_x=geometryctx.analyser_ellipse_points[0],
+                         points_analyser_y=geometryctx.analyser_ellipse_points[1],
+                         points_x=geometryctx.analyser_points[0], points_y=geometryctx.analyser_points[1])

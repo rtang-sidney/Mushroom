@@ -478,41 +478,44 @@ def get_resolution_robbewley(geo_ctx: GeometryContext, instrument: InstrumentCon
                                                                                                   detector_x.shape[0]))
     all_delta_qxy = []
     all_delta_qz = []
-    for j in range(len(azimuthal_angles)):
-        for i in range(analyser_x.shape[0]):
-            k = j * (analyser_x.shape[0]) + i
-            analyser_point = np.array([analyser_x[i], analyser_y[i]])
-            detector_point = np.array([detector_x[i], detector_y[i]])
+    for i in range(analyser_x.shape[0]):
+        analyser_point = np.array([analyser_x[i], analyser_y[i]])
+        detector_point = np.array([detector_x[i], detector_y[i]])
+        distance_ad = np.linalg.norm(analyser_point - detector_point)
 
-            distance_ad = np.linalg.norm(analyser_point - detector_point)
-            dx = np.sqrt((np.tan(2 * instrument.moasic_analyser) * distance_ad) ** 2 + instrument.analyser_segment ** 2)
-            x = detector_x[i]
-            thi = abs(dx / x)
-            dtheta = abs(instrument.analyser_segment / np.linalg.norm(analyser_point - geo_ctx.sample_point))
-            if j == 0:
-                dqxy = all_qxy[k] - all_qxy[k + analyser_x.shape[0]]
-            else:
-                dqxy = all_qxy[k] - all_qxy[k - analyser_x.shape[0]]
-            dqxy = abs(dqxy)
-            delta_qxy = dqxy * thi / dtheta
-            all_delta_qxy.append(delta_qxy)
+        dx = np.sqrt((np.tan(2 * instrument.moasic_analyser) * distance_ad) ** 2 + instrument.analyser_segment ** 2)
+        x = detector_x[i]
+        thi = abs(dx / x)
+        dtheta = abs(instrument.analyser_segment / np.linalg.norm(analyser_point - geo_ctx.sample_point))
+        for j in range(len(azimuthal_angles)):
+            k = i * len(azimuthal_angles) + j
+            try:
+                if j == 0:
+                    dqxy = all_qxy[k] - all_qxy[k + 1]
+                else:
+                    dqxy = all_qxy[k] - all_qxy[k - 1]
+                dqxy = abs(dqxy)
+                delta_qxy = dqxy * thi / dtheta
+                all_delta_qxy.append(delta_qxy)
+            except IndexError:
+                print(i, j, k, analyser_x.shape[0], len(azimuthal_angles))
 
-            vector_ad = points_to_vector(analyser_point, detector_point)
-            theta0 = np.arctan(abs(vector_ad[1] / vector_ad[0]))
-            dxy = dx / np.sin(theta0)
-            x_spread = abs(dxy)
-            if i == 0:
-                next_point = np.array([detector_x[i + 1], detector_y[i + 1]])
-                x_point = abs(detector_point[0] - next_point[0])
-                dqz = all_qz[k] - all_qz[k + 1]
+        vector_ad = points_to_vector(analyser_point, detector_point)
+        theta0 = np.arctan(abs(vector_ad[1] / vector_ad[0]))
+        dxy = dx / np.sin(theta0)
+        x_spread = abs(dxy)
+        if i == 0:
+            next_point = np.array([detector_x[i + 1], detector_y[i + 1]])
+            x_point = abs(detector_point[0] - next_point[0])
+            dqz = all_qz[i] - all_qz[i + 1]
 
-            else:
-                last_point = np.array([detector_x[i - 1], detector_y[i - 1]])
-                x_point = abs(detector_point[0] - last_point[0])
-                dqz = all_qz[k] - all_qz[k - 1]
-            dqz = abs(dqz)
-            delta_qz = dqz * x_spread / x_point
-            all_delta_qz.append(delta_qz)
+        else:
+            last_point = np.array([detector_x[i - 1], detector_y[i - 1]])
+            x_point = abs(detector_point[0] - last_point[0])
+            dqz = all_qz[i] - all_qz[i - 1]
+        dqz = abs(dqz)
+        delta_qz = dqz * x_spread / x_point
+        all_delta_qz.append(delta_qz)
     # print(len(all_delta_qxy), len(all_delta_qz))
     return np.array(all_delta_qxy), np.array(all_delta_qz)
 
@@ -539,7 +542,7 @@ def plot_resolution(geo_ctx: GeometryContext, all_qxy, all_dqxy, all_qz, all_dqz
     plt.close(3)
 
 
-def plot_comparison(all_qxy, all_dqxy, all_delta_qxy_rob, all_qz, all_dqz, all_delta_qz_rob):
+def plot_resolution_comparison(all_qxy, all_dqxy, all_delta_qxy_rob, all_qz, all_dqz, all_delta_qz_rob):
     # compare the horizontal component of the q-resolution calculated by us and by Rob Bewley
     plt.figure(4)
     plt.subplot(121)
@@ -625,13 +628,13 @@ all_qz = np.array(all_qz)
 all_dqxy = np.array(all_dqxy)
 all_dqz = np.array(all_dqz)
 
-# plot the geometry of the analyser, detector, sample and focus
-
-
-# all_delta_qxy_rob, all_delta_qz_rob = get_resolution_robbewley(geo_ctx=geometryctx, instrument=instrumentctx,
-#                                                                all_qxy=all_qxy, all_qz=all_qz)
-
 # plot_whole_geometry(geo_ctx=geometryctx, instrument=instrumentctx)
-plot_analyser_comparison(points_analyser_x=geometryctx.analyser_ellipse_points[0],
-                         points_analyser_y=geometryctx.analyser_ellipse_points[1],
-                         points_x=geometryctx.analyser_points[0], points_y=geometryctx.analyser_points[1])
+# plot_analyser_comparison(points_analyser_x=geometryctx.analyser_ellipse_points[0],
+#                          points_analyser_y=geometryctx.analyser_ellipse_points[1],
+#                          points_x=geometryctx.analyser_points[0], points_y=geometryctx.analyser_points[1])
+
+all_delta_qxy_rob, all_delta_qz_rob = get_resolution_robbewley(geo_ctx=geometryctx, instrument=instrumentctx,
+                                                               all_qxy=all_qxy, all_qz=all_qz)
+plot_resolution_comparison(all_qxy=all_qxy, all_dqxy=all_dqxy, all_delta_qxy_rob=all_delta_qxy_rob, all_qz=all_qz,
+                           all_dqz=all_dqz,
+                           all_delta_qz_rob=all_delta_qz_rob)

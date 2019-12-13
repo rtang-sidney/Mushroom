@@ -141,7 +141,8 @@ class GeometryContext(object):
         point_now = self.start_point
         analyser_x = [self.start_point[0]]
         analyser_y = [self.start_point[1]]
-        while self.angle_minus - 0.01 < np.arctan(point_now[1] / point_now[0]) < self.angle_plus + 0.01:
+        while self.angle_minus - np.deg2rad(0.1) < np.arctan(
+                point_now[1] / point_now[0]) < self.angle_plus + np.deg2rad(0.1):
             vector_sa = points_to_vector(point1=self.sample_point, point2=point_now)
             vector_af = points_to_vector(point1=point_now, point2=self.focus_point)
             vector_tangential = vector_bisector(vector_sa, vector_af)
@@ -628,10 +629,10 @@ all_qz = np.array(all_qz)
 all_dqxy = np.array(all_dqxy)
 all_dqz = np.array(all_dqz)
 
-# plot_whole_geometry(geo_ctx=geometryctx, instrument=instrumentctx)
-# plot_analyser_comparison(points_analyser_x=geometryctx.analyser_ellipse_points[0],
-#                          points_analyser_y=geometryctx.analyser_ellipse_points[1],
-#                          points_x=geometryctx.analyser_points[0], points_y=geometryctx.analyser_points[1])
+plot_whole_geometry(geo_ctx=geometryctx, instrument=instrumentctx)
+plot_analyser_comparison(points_analyser_x=geometryctx.analyser_ellipse_points[0],
+                         points_analyser_y=geometryctx.analyser_ellipse_points[1],
+                         points_x=geometryctx.analyser_points[0], points_y=geometryctx.analyser_points[1])
 
 all_delta_qxy_rob, all_delta_qz_rob = get_resolution_robbewley(geo_ctx=geometryctx, instrument=instrumentctx,
                                                                all_qxy=all_qxy, all_qz=all_qz)

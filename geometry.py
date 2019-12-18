@@ -270,13 +270,16 @@ def angular_spread_analyser(geo_ctx: GeometryContext, instrument: InstrumentCont
     return np.sqrt(numerator / denominator)
 
 
-def delta_kf_bragg(geo_ctx: GeometryContext, instrument: InstrumentContext, analyser_point, kf):
+def get_delta_kf(geo_ctx: GeometryContext, instrument: InstrumentContext, analyser_point_now, analyser_point_nearest,
+                 kf):
     # gives the deviation of the wave-number by means of the Bragg's law
-    dtheta_analyser = angular_spread_analyser(geo_ctx, instrument, analyser_point=analyser_point)
-    twotheta_analyser = analyser_twotheta(geo_ctx, instrument, analyser_point=analyser_point)
-    delta_kf = kf * np.sqrt(
+    dtheta_analyser = angular_spread_analyser(geo_ctx, instrument, analyser_point=analyser_point_now)
+    twotheta_analyser = analyser_twotheta(geo_ctx, instrument, analyser_point=analyser_point_now)
+    dkf_bragg = kf * np.sqrt(
         np.sum(np.square([instrument.deltad_d, dtheta_analyser / np.tan(twotheta_analyser / 2.0)])))
-    return delta_kf
+    kf_nearest = wavenumber_bragg(geo_ctx=geo_ctx, instrument=instrument, analyser_point=analyser_point_nearest)
+    dkf_segment = abs(kf - kf_nearest)
+    return np.sqrt(np.sum(np.square([dkf_bragg, dkf_segment])))
 
 
 def get_delta_phi(geo_ctx: GeometryContext, instrument: InstrumentContext, analyser_point):
@@ -290,8 +293,9 @@ def get_delta_phi(geo_ctx: GeometryContext, instrument: InstrumentContext, analy
 
 
 def get_de_e(geo_ctx: GeometryContext, instrument: InstrumentContext, analyser_point):
-    kf = wavenumber_bragg(geo_ctx=geo_ctx, instrument=instrument, analyser_point=analyser_point)  # outgoing wave number
-    delta_kf = delta_kf_bragg(geo_ctx, instrument, analyser_point=analyser_point, kf=kf)
+    kf = wavenumber_bragg(geo_ctx=geo_ctx, instrument=instrument,
+                          analyser_point=analyser_point)  # outgoing wave number
+    delta_kf = get_delta_kf(geo_ctx, instrument, analyser_point_now=analyser_point, kf=kf)
     return 2. * delta_kf / kf
 
 
@@ -323,14 +327,15 @@ def get_spread_from_detector(analyser_point, focus, detector, angular_spread_ana
     return spread_detector
 
 
-def get_resolution_qxy(geo_ctx: GeometryContext, instrument: InstrumentContext, kf, phi, theta, analyser_point, qxy,
-                       ki=None):
+def get_resolution_qxy(geo_ctx: GeometryContext, instrument: InstrumentContext, kf, phi, theta, analyser_point_now,
+                       analyser_point_nearest, qxy, ki=None):
     if ki is None:
         ki = kf
-    delta_kf = delta_kf_bragg(geo_ctx, instrument=instrument, analyser_point=analyser_point, kf=kf)
-    delta_phi = get_delta_phi(geo_ctx, instrument=instrument, analyser_point=analyser_point)
+    delta_kf = get_delta_kf(geo_ctx, instrument=instrument, analyser_point_now=analyser_point_now,
+                            analyser_point_nearest=analyser_point_nearest, kf=kf)
+    delta_phi = get_delta_phi(geo_ctx, instrument=instrument, analyser_point=analyser_point_now)
     # delta_phi = np.sqrt(np.sum(np.square([divergence_analyser_point(geo_ctx, analyser_point=analyser_point)])))
-    dtheta_sample = np.sqrt(np.sum(np.square([divergence_analyser_point(geo_ctx, analyser_point=analyser_point)])))
+    dtheta_sample = np.sqrt(np.sum(np.square([divergence_analyser_point(geo_ctx, analyser_point=analyser_point_now)])))
 
     qxy_kf = np.cos(phi) * (kf * np.cos(phi) - ki * np.cos(theta)) / qxy
     qxy_phi = -kf * np.sin(phi) * (kf * np.cos(phi) - ki * np.cos(theta)) / qxy
@@ -339,9 +344,11 @@ def get_resolution_qxy(geo_ctx: GeometryContext, instrument: InstrumentContext, 
     return delta_qxy
 
 
-def get_resolution_qz(geo_ctx: GeometryContext, instrument: InstrumentContext, kf, phi, analyser_point):
-    delta_kf = delta_kf_bragg(geo_ctx, instrument=instrument, analyser_point=analyser_point, kf=kf)
-    delta_phi = get_delta_phi(geo_ctx, instrument=instrument, analyser_point=analyser_point)
+def get_resolution_qz(geo_ctx: GeometryContext, instrument: InstrumentContext, kf, phi, analyser_point_now,
+                      analyser_point_nearest):
+    delta_kf = get_delta_kf(geo_ctx, instrument=instrument, analyser_point_now=analyser_point_now,
+                            analyser_point_nearest=analyser_point_nearest, kf=kf)
+    delta_phi = get_delta_phi(geo_ctx, instrument=instrument, analyser_point=analyser_point_now)
 
     qz_kf = np.sin(phi)
     qz_phi = kf * np.cos(phi)
@@ -601,18 +608,22 @@ all_dqz = []
 for i in range(len(geometryctx.analyser_points[0])):
     # calculates the resolution in the horizontal plane and in the vertical direction.
     # qxy and qz have different dimensions!
-    x = geometryctx.analyser_points[0][i]
-    y = geometryctx.analyser_points[1][i]
-    phi = np.arctan(y / x)  # the polar angle of one point
-    kf = wavenumber_bragg(geo_ctx=geometryctx, instrument=instrumentctx, analyser_point=[x, y])
+    point_now = [geometryctx.analyser_points[0][i], geometryctx.analyser_points[1][i]]
+    if i == 0:
+        point_nearest = [geometryctx.analyser_points[0][1], geometryctx.analyser_points[1][1]]
+    else:
+        point_nearest = [geometryctx.analyser_points[0][i - 1], geometryctx.analyser_points[1][i - 1]]
+    phi = np.arctan(point_now[1] / point_now[0])  # the polar angle of one point
+    kf = wavenumber_bragg(geo_ctx=geometryctx, instrument=instrumentctx, analyser_point=point_now)
     qz = get_qz(kf=kf, polar_angle=phi)
-    delta_qz = get_resolution_qz(geo_ctx=geometryctx, instrument=instrumentctx, analyser_point=[x, y], kf=kf, phi=phi)
+    delta_qz = get_resolution_qz(geo_ctx=geometryctx, instrument=instrumentctx, analyser_point_now=point_now,
+                                 analyser_point_nearest=point_nearest, kf=kf, phi=phi)
     for theta in azimuthal_angles:
         kf_vector = get_kf_vector(kf_norm=kf, azimuthal=theta,
                                   polar=phi)  # the kf-vector changes is determined by the azimuthal and polar angles
         qxy = get_qxy(kf_vector=kf_vector)  # horizontal component of q-vector
-        delta_qxy = get_resolution_qxy(geo_ctx=geometryctx, instrument=instrumentctx, analyser_point=[x, y], kf=kf,
-                                       phi=phi, qxy=qxy, theta=theta)
+        delta_qxy = get_resolution_qxy(geo_ctx=geometryctx, instrument=instrumentctx, analyser_point_now=point_now,
+                                       analyser_point_nearest=point_nearest, kf=kf, phi=phi, qxy=qxy, theta=theta)
         all_qxy.append(qxy)
         all_dqxy.append(delta_qxy)
     all_qz.append(qz)

@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
-from helper import wavelength_to_eV, points_distance, get_angle
+from helper import wavelength_to_eV, points_distance, get_angle, vector_bisector
 
 ZERO_TOL = 1e-6
 
@@ -130,10 +130,6 @@ class GeometryContext(object):
 
     def _generate_analyser_segments(self):
         # generates the analyser with a finite segment size
-        def vector_bisector(vector1, vector2):
-            vector1 = np.array(vector1)
-            vector2 = np.array(vector2)
-            return np.linalg.norm(vector1) * vector2 + np.linalg.norm(vector2) * vector1
 
         def unit_vector(vector):
             return vector / np.linalg.norm(vector)
@@ -284,14 +280,13 @@ def delta_kf_bragg(geo_ctx: GeometryContext, instrument: InstrumentContext, anal
 
 
 def get_delta_phi(geo_ctx: GeometryContext, instrument: InstrumentContext, analyser_point):
-    # TODO: Is this redundant? Since the the analyser angular spread itself depends on the beam divergence, too.
-    #  This should probably depend on the detector spread
-    analyser_divergence = instrument.analyser_segment / points_distance(geo_ctx.sample_point, analyser_point)
-    # analyser_divergence = np.sqrt(
-    #     np.sum(np.square([divergence_analyser_point(geo_ctx=geo_ctx, analyser_point=analyser_point)])))
-    # dtheta_analyser = angular_spread_analyser(geo_ctx=geo_ctx, instrument=instrument, analyser_point=analyser_point)
-    # return np.sqrt(np.sum(np.square([dtheta_analyser, analyser_divergence])))
-    return analyser_divergence
+    vector_sa = points_to_vector(geo_ctx.sample_point, analyser_point)
+    vector_af = points_to_vector(point1=analyser_point, point2=geo_ctx.focus_point)
+    vector_segment = vector_bisector(vector_sa, vector_af)
+    segment_projection = instrument.analyser_segment * np.cos(np.pi / 2.0 - get_angle(vector_sa, vector_af))
+    distance_sa = points_distance(point1=geo_ctx.sample_point, point2=analyser_point)
+
+    return segment_projection / distance_sa
 
 
 def get_de_e(geo_ctx: GeometryContext, instrument: InstrumentContext, analyser_point):
@@ -471,7 +466,6 @@ def plot_whole_geometry(geo_ctx: GeometryContext, instrument: InstrumentContext)
 
 
 def get_resolution_robbewley(geo_ctx: GeometryContext, instrument: InstrumentContext, all_qxy, all_qz):
-    # TODO: change the sequence of the indices
     analyser_x, analyser_y = geo_ctx.analyser_points
     detector_x, detector_y = geo_ctx.detector_points
     if analyser_x.shape[0] != detector_x.shape[0]:
@@ -629,10 +623,10 @@ all_qz = np.array(all_qz)
 all_dqxy = np.array(all_dqxy)
 all_dqz = np.array(all_dqz)
 
-plot_whole_geometry(geo_ctx=geometryctx, instrument=instrumentctx)
-plot_analyser_comparison(points_analyser_x=geometryctx.analyser_ellipse_points[0],
-                         points_analyser_y=geometryctx.analyser_ellipse_points[1],
-                         points_x=geometryctx.analyser_points[0], points_y=geometryctx.analyser_points[1])
+# plot_whole_geometry(geo_ctx=geometryctx, instrument=instrumentctx)
+# plot_analyser_comparison(points_analyser_x=geometryctx.analyser_ellipse_points[0],
+#                          points_analyser_y=geometryctx.analyser_ellipse_points[1],
+#                          points_x=geometryctx.analyser_points[0], points_y=geometryctx.analyser_points[1])
 
 all_delta_qxy_rob, all_delta_qz_rob = get_resolution_robbewley(geo_ctx=geometryctx, instrument=instrumentctx,
                                                                all_qxy=all_qxy, all_qz=all_qz)

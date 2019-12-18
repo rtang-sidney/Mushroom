@@ -1,3 +1,4 @@
+import numpy
 import numpy as np
 
 MASS_NEUTRON = 1.67492749804e-27  # kg
@@ -30,3 +31,9 @@ def get_angle(vector1, vector2):
     vector1 = np.array(vector1)
     vector2 = np.array(vector2)
     return np.arccos(np.dot(vector1, vector2) / (np.linalg.norm(vector1) * np.linalg.norm(vector2)))
+
+
+def vector_bisector(vector1, vector2):
+    vector1 = np.array(vector1)
+    vector2 = np.array(vector2)
+    return np.linalg.norm(vector1) * vector2 + np.linalg.norm(vector2) * vector1

@@ -57,13 +57,11 @@ class GeometryContext(object):
             self.filename_geometry = 'Geometry_SameSide.pdf'
             self.filename_horizontal = 'QResolution_Horizontal_SameSide.pdf'
             self.filename_vertical = 'QResolution_Vertical_SameSide.pdf'
-            self.plot_ylim = [-1.3, 0.9]
         elif side == "opposite":
-            self.focus_point = (0.15, -0.45)  # m
+            self.focus_point = (0.15, -0.4)  # m
             self.filename_geometry = 'Geometry_OppositeSide.pdf'
             self.filename_horizontal = 'QResolution_Horizontal_OppositeSide.pdf'
             self.filename_vertical = 'QResolution_Vertical_OppositeSide.pdf'
-            self.plot_ylim = [-1.1, 0.9]
         else:
             raise RuntimeError("Given information invalid".format(side))
 
@@ -75,7 +73,7 @@ class GeometryContext(object):
         # if the analyser is generated as a part of an ideal ellipse:
         self.analyser_ellipse_points = self._generate_analyser_ellipse()
 
-        self.detector_line = [0.0, 1.0, -1.0]  # [0, 1, h]: h -> vertical position (m)
+        self.detector_line = [0.0, 1.0, -0.9]  # [0, 1, h]: h -> vertical position (m)
         self.detector_points = self._detector_from_analyser()
 
     def _ellipse_points_to_parameters(self):
@@ -202,7 +200,7 @@ class GeometryContext(object):
 
 class InstrumentContext(object):
     def __init__(self):
-        self.moasic_analyser = np.deg2rad(0.4)  # radian, analyser mosaic
+        self.moasic_analyser = np.deg2rad(0.8)  # radian, analyser mosaic
         self.deltad_d = 6e-4  # relative uncertainty of the lattice distance, given in [paper2]
         self.pg_lattice_distance = 3.35e-10  # m, lattive distance d of a PG crystal
         self.analyser_segment = 1e-2  # m, the size of an analyser segment in 1D
@@ -292,10 +290,11 @@ def get_delta_phi(geo_ctx: GeometryContext, instrument: InstrumentContext, analy
     return segment_projection / distance_sa
 
 
-def get_de_e(geo_ctx: GeometryContext, instrument: InstrumentContext, analyser_point):
+def get_de_e(geo_ctx: GeometryContext, instrument: InstrumentContext, analyser_point, nearest_point):
     kf = wavenumber_bragg(geo_ctx=geo_ctx, instrument=instrument,
                           analyser_point=analyser_point)  # outgoing wave number
-    delta_kf = get_delta_kf(geo_ctx, instrument, analyser_point_now=analyser_point, kf=kf)
+    delta_kf = get_delta_kf(geo_ctx, instrument, analyser_point_now=analyser_point,
+                            analyser_point_nearest=nearest_point, kf=kf)
     return 2. * delta_kf / kf
 
 
@@ -409,10 +408,11 @@ def plot_analyser_comparison(points_x, points_y, points_analyser_x, points_analy
 
 
 def plot_whole_geometry(geo_ctx: GeometryContext, instrument: InstrumentContext):
-    def plot_for_analyser_point(instrument: InstrumentContext, analyser_point, detector_point):
+    def plot_for_analyser_point(instrument: InstrumentContext, analyser_point, nearest_point, detector_point):
         energy_ev = wavelength_to_eV(
             wavelength=wavelength_bragg(instrument=instrument, analyser_point=analyser_point, geo_ctx=geo_ctx))
-        e_resolution_ev = get_de_e(geo_ctx=geo_ctx, analyser_point=analyser_point, instrument=instrument)
+        e_resolution_ev = get_de_e(geo_ctx=geo_ctx, analyser_point=analyser_point, nearest_point=nearest_point,
+                                   instrument=instrument)
         e_resolution_ev *= energy_ev
 
         line_sp_plot = ([geo_ctx.sample_point[0], analyser_point[0]], [geo_ctx.sample_point[1], analyser_point[1]])
@@ -445,9 +445,11 @@ def plot_whole_geometry(geo_ctx: GeometryContext, instrument: InstrumentContext)
     last_point_detector = [geo_ctx.detector_points[0][-1], geo_ctx.detector_points[1][-1]]
 
     plot_for_analyser_point(instrument=instrument, analyser_point=first_point_analyser,
-                            detector_point=first_point_detector)
+                            detector_point=first_point_detector,
+                            nearest_point=[geo_ctx.analyser_points[0][1], geo_ctx.analyser_points[1][1]])
     plot_for_analyser_point(instrument=instrument, analyser_point=last_point_analyser,
-                            detector_point=last_point_detector)
+                            detector_point=last_point_detector,
+                            nearest_point=[geo_ctx.analyser_points[0][-2], geo_ctx.analyser_points[1][-2]])
 
     index_largest_energy = np.argmax(np.array(list(
         map(lambda x, y: wavenumber_bragg(geo_ctx=geo_ctx, instrument=instrument, analyser_point=[x, y]),
@@ -455,17 +457,21 @@ def plot_whole_geometry(geo_ctx: GeometryContext, instrument: InstrumentContext)
     plot_for_analyser_point(instrument=instrument, analyser_point=[geo_ctx.analyser_points[0][index_largest_energy],
                                                                    geo_ctx.analyser_points[1][index_largest_energy]],
                             detector_point=[geo_ctx.detector_points[0][index_largest_energy],
-                                            geo_ctx.detector_points[1][index_largest_energy]])
+                                            geo_ctx.detector_points[1][index_largest_energy]],
+                            nearest_point=[geo_ctx.analyser_points[0][index_largest_energy + 1],
+                                           geo_ctx.analyser_points[1][index_largest_energy + 1]])
 
     # mark the position of the sample and focus, and plot the detector
     plt.plot(*geo_ctx.sample_point, "ro")
     plt.text(x=-0.275, y=-0.25, s="Sample", fontsize=15)
     plt.plot(*geo_ctx.focus_point, "ro", alpha=0.5)
-    plt.text(x=0.75, y=-0.75, s="Focus", fontsize=15)
+    plt.text(x=geo_ctx.focus_point[0] + 0.1, y=geo_ctx.focus_point[1] - 0.1, s="Focus", fontsize=15)
     plt.plot([first_point_detector[0], last_point_detector[0]], [first_point_detector[1], last_point_detector[1]],
              color='#8c564b', linewidth=5)
     plt.plot([-first_point_detector[0], -last_point_detector[0]], [first_point_detector[1], last_point_detector[1]],
              color='#8c564b', linewidth=5)
+
+    plt.xlim(-1.8, 1.8)
 
     plt.tight_layout()
     plt.savefig(geo_ctx.filename_geometry, bbox_inches='tight')
@@ -488,7 +494,7 @@ def get_resolution_robbewley(geo_ctx: GeometryContext, instrument: InstrumentCon
         dx = np.sqrt((np.tan(2 * instrument.moasic_analyser) * distance_ad) ** 2 + instrument.analyser_segment ** 2)
         x = detector_x[i]
         thi = abs(dx / x)
-        dtheta = abs(instrument.analyser_segment / np.linalg.norm(analyser_point - geo_ctx.sample_point))
+        dtheta = abs(instrument.analyser_segment / abs(analyser_point[0] - geo_ctx.sample_point[0]))
         for j in range(len(azimuthal_angles)):
             k = i * len(azimuthal_angles) + j
             try:
@@ -576,7 +582,7 @@ def plot_resolution_comparison(all_qxy, all_dqxy, all_delta_qxy_rob, all_qz, all
     plt.close(5)
 
 
-geometryctx = GeometryContext()
+geometryctx = GeometryContext(side="same")
 instrumentctx = InstrumentContext()
 
 # points_x, points_y = geometryctx.analyser_points
@@ -587,9 +593,6 @@ ax.set_aspect('equal', 'box')
 ax.spines['right'].set_visible(False)
 ax.spines['top'].set_visible(False)
 # ax.add_patch(ellipse)
-
-plt.xlim(-2, 2)
-plt.ylim(*geometryctx.plot_ylim)
 
 # generates the azimuthal angle elements based on the size of the analyser segments
 angle_one_segment = np.arcsin(instrumentctx.analyser_segment / geometryctx.start_distance)
@@ -634,7 +637,7 @@ all_qz = np.array(all_qz)
 all_dqxy = np.array(all_dqxy)
 all_dqz = np.array(all_dqz)
 
-# plot_whole_geometry(geo_ctx=geometryctx, instrument=instrumentctx)
+plot_whole_geometry(geo_ctx=geometryctx, instrument=instrumentctx)
 # plot_analyser_comparison(points_analyser_x=geometryctx.analyser_ellipse_points[0],
 #                          points_analyser_y=geometryctx.analyser_ellipse_points[1],
 #                          points_x=geometryctx.analyser_points[0], points_y=geometryctx.analyser_points[1])

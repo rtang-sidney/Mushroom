@@ -343,6 +343,38 @@ def get_resolution_qxy(geo_ctx: GeometryContext, instrument: InstrumentContext, 
     return delta_qxy
 
 
+def get_resolution_qx(geo_ctx: GeometryContext, instrument: InstrumentContext, kf, phi, theta, analyser_point_now,
+                      analyser_point_nearest, qxy, ki=None):
+    if ki is None:
+        ki = kf
+    delta_kf = get_delta_kf(geo_ctx, instrument=instrument, analyser_point_now=analyser_point_now,
+                            analyser_point_nearest=analyser_point_nearest, kf=kf)
+    delta_phi = get_delta_phi(geo_ctx, instrument=instrument, analyser_point=analyser_point_now)
+    # delta_phi = np.sqrt(np.sum(np.square([divergence_analyser_point(geo_ctx, analyser_point=analyser_point)])))
+    dtheta_sample = np.sqrt(np.sum(np.square([divergence_analyser_point(geo_ctx, analyser_point=analyser_point_now)])))
+
+    qx_kf = np.cos(phi) * np.cos(theta)
+    qx_phi = -kf * np.sin(phi) * np.cos(theta)
+    qx_theta = - kf * np.cos(phi) * np.sin(theta)
+    delta_qx = np.sqrt(np.sum(np.square([qx_kf * delta_kf, qx_phi * delta_phi, qx_theta * dtheta_sample])))
+    return delta_qx
+
+
+def get_resolution_qy(geo_ctx: GeometryContext, instrument: InstrumentContext, kf, phi, theta, analyser_point_now,
+                      analyser_point_nearest, qxy, ki=None):
+    delta_kf = get_delta_kf(geo_ctx, instrument=instrument, analyser_point_now=analyser_point_now,
+                            analyser_point_nearest=analyser_point_nearest, kf=kf)
+    delta_phi = get_delta_phi(geo_ctx, instrument=instrument, analyser_point=analyser_point_now)
+    # delta_phi = np.sqrt(np.sum(np.square([divergence_analyser_point(geo_ctx, analyser_point=analyser_point)])))
+    dtheta_sample = np.sqrt(np.sum(np.square([divergence_analyser_point(geo_ctx, analyser_point=analyser_point_now)])))
+
+    qy_kf = np.cos(phi) * np.sin(theta)
+    qy_phi = -kf * np.sin(phi) * np.sin(theta)
+    qy_theta = kf * np.cos(phi) * np.cos(theta)
+    delta_qy = np.sqrt(np.sum(np.square([qy_kf * delta_kf, qy_phi * delta_phi, qy_theta * dtheta_sample])))
+    return delta_qy
+
+
 def get_resolution_qz(geo_ctx: GeometryContext, instrument: InstrumentContext, kf, phi, analyser_point_now,
                       analyser_point_nearest):
     delta_kf = get_delta_kf(geo_ctx, instrument=instrument, analyser_point_now=analyser_point_now,
@@ -405,6 +437,12 @@ def plot_analyser_comparison(points_x, points_y, points_analyser_x, points_analy
     plt.text(x=0.1, y=-0.4, s="Focus")
     plt.savefig("Geometry_Comparison.pdf", bbox_inches='tight')
     plt.close(10)
+
+
+def coordinate_transformation(theta, phi, vector):
+    matrix_x = np.array([[1, 0, 0], [0, np.sin(phi), -np.cos(phi)], [0, np.cos(phi), np.sin(phi)]])
+    matrix_z = np.array([[-np.sin(theta), -np.cos(theta), 0], [np.cos(theta), -np.sin(theta), 0], [0, 0, 1]])
+    return np.multiply(matrix_x, np.multiply(matrix_z, vector))
 
 
 def plot_whole_geometry(geo_ctx: GeometryContext, instrument: InstrumentContext):

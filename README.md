@@ -4,4 +4,4 @@ Defines the supercone geometry of Mushroom and plot. Calculates the resolution f
 
 The results are compared to those from the code of Dr. Robert Bewley.
 
-Thanks to the help from https://github.com/TUM-E21-ThinFilms
+Thanks to Alexander Book for the help with the improvement of the code.

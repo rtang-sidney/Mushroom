@@ -53,7 +53,7 @@ class GeometryContext(object):
                             self.start_distance * np.sin(self.angle_plus)]
 
         if side == "same":
-            self.focus_point = (0.7, -0.7)  # m
+            self.focus_point = (0.9, -0.45)  # m
             self.filename_geometry = 'Geometry_SameSide.pdf'
             self.filename_horizontal = 'QResolution_Horizontal_SameSide.pdf'
             self.filename_vertical = 'QResolution_Vertical_SameSide.pdf'
@@ -73,7 +73,8 @@ class GeometryContext(object):
         # if the analyser is generated as a part of an ideal ellipse:
         self.analyser_ellipse_points = self._generate_analyser_ellipse()
 
-        self.detector_line = [0.0, 1.0, -0.9]  # [0, 1, h]: h -> vertical position (m)
+        self.detector_line1 = [0.0, 1.0, -0.9]  # [0, 1, v]: v -> vertical position (m) of the horizontal bank
+        self.detector_line2 = [1.0, 0.0, 0.7]  # [1, 0, h]: h -> horizontal position (m) of the vertical bank
         self.detector_points = self._detector_from_analyser()
 
     def _ellipse_points_to_parameters(self):
@@ -188,9 +189,11 @@ class GeometryContext(object):
         analyser_x, analyser_y = self.analyser_points
         for i in range(analyser_x.shape[0]):
             line_af = points_to_line(self.focus_point, [analyser_x[i], analyser_y[i]])
-            detector_point = lines_intersect(line1=line_af, line2=self.detector_line)
-            if abs(detector_point[1] - self.detector_line[2]) > ZERO_TOL:
-                raise RuntimeError("Calculated detector points not on the detector line.")
+            detector_point = lines_intersect(line1=line_af, line2=self.detector_line1)
+            if detector_point[0] - self.detector_line2[2] < - ZERO_TOL:
+                detector_point = lines_intersect(line1=line_af, line2=self.detector_line2)
+                if detector_point[1] - self.detector_line1[2] < - ZERO_TOL:
+                    raise RuntimeError("Failed to find the detector point.")
             detector_x.append(detector_point[0])
             detector_y.append(detector_point[1])
         if detector_x[0] * detector_x[-1] < 0:
@@ -504,16 +507,14 @@ def plot_whole_geometry(geo_ctx: GeometryContext, instrument: InstrumentContext)
     plt.text(x=-0.275, y=-0.25, s="Sample", fontsize=15)
     plt.plot(*geo_ctx.focus_point, "ro", alpha=0.5)
     plt.text(x=geo_ctx.focus_point[0] + 0.1, y=geo_ctx.focus_point[1] - 0.1, s="Focus", fontsize=15)
-    plt.plot([first_point_detector[0], last_point_detector[0]], [first_point_detector[1], last_point_detector[1]],
-             color='#8c564b', linewidth=5)
-    plt.plot([-first_point_detector[0], -last_point_detector[0]], [first_point_detector[1], last_point_detector[1]],
-             color='#8c564b', linewidth=5)
+    plt.plot(*geo_ctx.detector_points, color='#8c564b')
 
     plt.xlim(-1.8, 1.8)
 
     plt.tight_layout()
     plt.savefig(geo_ctx.filename_geometry, bbox_inches='tight')
     plt.close(1)
+    print("{:s} plotted.".format(geo_ctx.filename_geometry))
 
 
 def get_resolution_robbewley(geo_ctx: GeometryContext, instrument: InstrumentContext, all_qxy, all_qz):
@@ -680,8 +681,8 @@ plot_whole_geometry(geo_ctx=geometryctx, instrument=instrumentctx)
 #                          points_analyser_y=geometryctx.analyser_ellipse_points[1],
 #                          points_x=geometryctx.analyser_points[0], points_y=geometryctx.analyser_points[1])
 
-all_delta_qxy_rob, all_delta_qz_rob = get_resolution_robbewley(geo_ctx=geometryctx, instrument=instrumentctx,
-                                                               all_qxy=all_qxy, all_qz=all_qz)
-plot_resolution_comparison(all_qxy=all_qxy, all_dqxy=all_dqxy, all_delta_qxy_rob=all_delta_qxy_rob, all_qz=all_qz,
-                           all_dqz=all_dqz,
-                           all_delta_qz_rob=all_delta_qz_rob)
+# all_delta_qxy_rob, all_delta_qz_rob = get_resolution_robbewley(geo_ctx=geometryctx, instrument=instrumentctx,
+#                                                                all_qxy=all_qxy, all_qz=all_qz)
+# plot_resolution_comparison(all_qxy=all_qxy, all_dqxy=all_dqxy, all_delta_qxy_rob=all_delta_qxy_rob, all_qz=all_qz,
+#                            all_dqz=all_dqz,
+#                            all_delta_qz_rob=all_delta_qz_rob)

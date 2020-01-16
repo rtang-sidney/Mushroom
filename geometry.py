@@ -443,9 +443,11 @@ def plot_analyser_comparison(points_x, points_y, points_analyser_x, points_analy
 
 
 def coordinate_transformation(theta, phi, vector):
-    matrix_x = np.array([[1, 0, 0], [0, np.sin(phi), -np.cos(phi)], [0, np.cos(phi), np.sin(phi)]])
-    matrix_z = np.array([[-np.sin(theta), -np.cos(theta), 0], [np.cos(theta), -np.sin(theta), 0], [0, 0, 1]])
-    return np.multiply(matrix_x, np.multiply(matrix_z, vector))
+    theta = -(np.pi / 2.0 + theta)
+    phi = -(np.pi / 2.0 - phi)
+    matrix_x = np.array([[1, 0, 0], [0, np.cos(phi), -np.sin(phi)], [0, np.sin(phi), np.cos(phi)]])
+    matrix_z = np.array([[np.cos(theta), -np.sin(theta), 0], [np.sin(theta), np.cos(theta), 0], [0, 0, 1]])
+    return np.dot(matrix_x, np.dot(matrix_z, vector))
 
 
 def plot_whole_geometry(geo_ctx: GeometryContext, instrument: InstrumentContext):
@@ -621,6 +623,85 @@ def plot_resolution_comparison(all_qxy, all_dqxy, all_delta_qxy_rob, all_qz, all
     plt.close(5)
 
 
+def plot_resolution_polarangles(geo_ctx: GeometryContext, all_dq_transformed, number_azimuthal):
+    # plot the horizontal component of the q-resolution calculated by us
+    polar_angles = np.repeat(np.rad2deg(np.arctan(geo_ctx.analyser_points[1] / geo_ctx.analyser_points[0])),
+                             number_azimuthal)
+    plt.figure(6)
+    all_dq_transformed = np.abs(all_dq_transformed)
+    plt.subplot(131)
+    plt.plot(polar_angles, all_dq_transformed[:, 0] * 1e-10, '.')
+    plt.xlabel(r"Polar angle $\phi$ (degree)")
+    plt.ylabel(r"$\Delta Q$ (Angstrom -1)")
+    plt.grid()
+    plt.title('x')
+    plt.tight_layout()
+    plt.subplot(132)
+    plt.plot(polar_angles, all_dq_transformed[:, 1] * 1e-10, '.')
+    plt.xlabel(r"Polar angle $\phi$ (degree)")
+    plt.grid()
+    plt.title('y')
+    plt.tight_layout()
+    plt.subplot(133)
+    plt.plot(polar_angles, all_dq_transformed[:, 2] * 1e-10, '.')
+    plt.xlabel(r"Polar angle $\phi$ (degree)")
+    plt.grid()
+    plt.title('z')
+    plt.tight_layout()
+    filename = "Resolution_PolarAngles.pdf"
+    plt.savefig(filename, bbox_inches='tight')
+    plt.close(6)
+    print("{:s} plotted.".format(filename))
+
+
+def resolution_calculation(geo_ctx: GeometryContext, instrument: InstrumentContext, azimuthal_angles):
+    # records the calculated data for plotting later
+    all_qxy = []
+    all_qz = []
+    all_dqxy = []
+    all_dqz = []
+    all_dq_transformed = []
+
+    # calculate the q-resolution for each segment on the analyser, which gives different q-vectors
+    # the outer loop is for the polar angle, and the inner one for the azimuthal angle
+    for i in range(len(geo_ctx.analyser_points[0])):
+        # calculates the resolution in the horizontal plane and in the vertical direction.
+        # qxy and qz have different dimensions!
+        point_now = [geo_ctx.analyser_points[0][i], geo_ctx.analyser_points[1][i]]
+        if i == 0:
+            point_nearest = [geo_ctx.analyser_points[0][1], geo_ctx.analyser_points[1][1]]
+        else:
+            point_nearest = [geo_ctx.analyser_points[0][i - 1], geo_ctx.analyser_points[1][i - 1]]
+        phi = np.arctan(point_now[1] / point_now[0])  # the polar angle of one point
+        kf = wavenumber_bragg(geo_ctx=geo_ctx, instrument=instrument, analyser_point=point_now)
+        qz = get_qz(kf=kf, polar_angle=phi)
+        delta_qz = get_resolution_qz(geo_ctx=geo_ctx, instrument=instrument, analyser_point_now=point_now,
+                                     analyser_point_nearest=point_nearest, kf=kf, phi=phi)
+        for theta in azimuthal_angles:
+            kf_vector = get_kf_vector(kf_norm=kf, azimuthal=theta,
+                                      polar=phi)  # the kf-vector changes is determined by the azimuthal and polar angles
+            qxy = get_qxy(kf_vector=kf_vector)  # horizontal component of q-vector
+            delta_qxy = get_resolution_qxy(geo_ctx=geometryctx, instrument=instrument, analyser_point_now=point_now,
+                                           analyser_point_nearest=point_nearest, kf=kf, phi=phi, qxy=qxy, theta=theta)
+            delta_qx = get_resolution_qx(geo_ctx=geometryctx, instrument=instrument, analyser_point_now=point_now,
+                                         analyser_point_nearest=point_nearest, kf=kf, phi=phi, qxy=qxy, theta=theta)
+            delta_qy = get_resolution_qy(geo_ctx=geometryctx, instrument=instrument, analyser_point_now=point_now,
+                                         analyser_point_nearest=point_nearest, kf=kf, phi=phi, qxy=qxy, theta=theta)
+            dq_transformed = coordinate_transformation(theta=theta, phi=phi, vector=[delta_qx, delta_qy, delta_qz])
+            all_dq_transformed.append(list(dq_transformed))
+            all_qxy.append(qxy)
+            all_dqxy.append(delta_qxy)
+        all_qz.append(qz)
+        all_dqz.append(delta_qz)
+
+    all_qxy = np.array(all_qxy)
+    all_qz = np.array(all_qz)
+    all_dqxy = np.array(all_dqxy)
+    all_dqz = np.array(all_dqz)
+    all_dq_transformed = np.array(all_dq_transformed)
+    return all_qxy, all_qz, all_dqxy, all_dqz, all_dq_transformed
+
+
 geometryctx = GeometryContext(side="same")
 instrumentctx = InstrumentContext()
 
@@ -640,43 +721,12 @@ azimuthal_stop = np.deg2rad(170.)  # radian
 number_points = round(abs(azimuthal_start - azimuthal_stop / angle_one_segment))
 azimuthal_angles = np.linspace(azimuthal_start, azimuthal_stop, num=number_points)
 
-# records the calculated data for plotting later
-all_qxy = []
-all_qz = []
-all_dqxy = []
-all_dqz = []
+all_qxy, all_qz, all_dqxy, all_dqz, all_dq_transformed = resolution_calculation(geo_ctx=geometryctx,
+                                                                                instrument=instrumentctx,
+                                                                                azimuthal_angles=azimuthal_angles)
 
-# calculate the q-resolution for each segment on the analyser, which gives different q-vectors
-for i in range(len(geometryctx.analyser_points[0])):
-    # calculates the resolution in the horizontal plane and in the vertical direction.
-    # qxy and qz have different dimensions!
-    point_now = [geometryctx.analyser_points[0][i], geometryctx.analyser_points[1][i]]
-    if i == 0:
-        point_nearest = [geometryctx.analyser_points[0][1], geometryctx.analyser_points[1][1]]
-    else:
-        point_nearest = [geometryctx.analyser_points[0][i - 1], geometryctx.analyser_points[1][i - 1]]
-    phi = np.arctan(point_now[1] / point_now[0])  # the polar angle of one point
-    kf = wavenumber_bragg(geo_ctx=geometryctx, instrument=instrumentctx, analyser_point=point_now)
-    qz = get_qz(kf=kf, polar_angle=phi)
-    delta_qz = get_resolution_qz(geo_ctx=geometryctx, instrument=instrumentctx, analyser_point_now=point_now,
-                                 analyser_point_nearest=point_nearest, kf=kf, phi=phi)
-    for theta in azimuthal_angles:
-        kf_vector = get_kf_vector(kf_norm=kf, azimuthal=theta,
-                                  polar=phi)  # the kf-vector changes is determined by the azimuthal and polar angles
-        qxy = get_qxy(kf_vector=kf_vector)  # horizontal component of q-vector
-        delta_qxy = get_resolution_qxy(geo_ctx=geometryctx, instrument=instrumentctx, analyser_point_now=point_now,
-                                       analyser_point_nearest=point_nearest, kf=kf, phi=phi, qxy=qxy, theta=theta)
-        all_qxy.append(qxy)
-        all_dqxy.append(delta_qxy)
-    all_qz.append(qz)
-    all_dqz.append(delta_qz)
-
-all_qxy = np.array(all_qxy)
-all_qz = np.array(all_qz)
-all_dqxy = np.array(all_dqxy)
-all_dqz = np.array(all_dqz)
-
-plot_whole_geometry(geo_ctx=geometryctx, instrument=instrumentctx)
+# plot_whole_geometry(geo_ctx=geometryctx, instrument=instrumentctx)
+plot_resolution_polarangles(geo_ctx=geometryctx, all_dq_transformed=all_dq_transformed, number_azimuthal=number_points)
 # plot_analyser_comparison(points_analyser_x=geometryctx.analyser_ellipse_points[0],
 #                          points_analyser_y=geometryctx.analyser_ellipse_points[1],
 #                          points_x=geometryctx.analyser_points[0], points_y=geometryctx.analyser_points[1])

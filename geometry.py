@@ -40,9 +40,9 @@ class GeometryContext(object):
         self.sample_point = (0.0, 0.0)  # m
 
         self.sample_size = 1e-2  # m
-        self.focus_size = 4e-2  # m
+        self.focus_size = 1e-2  # m
 
-        self.ellipse_number = 100  # number of points to form the ellipse
+        self.ellipse_number = 100  # number of points to form the ideal ellipse
 
         self.angle_plus = np.deg2rad(
             50.)  # radian, the slope of the line from the sample to the upmost point on the analyser
@@ -65,8 +65,8 @@ class GeometryContext(object):
         else:
             raise RuntimeError("Given information invalid".format(side))
 
-        self.semi_major = (points_distance(self.sample_point, self.start_point) + points_distance(self.focus_point,
-                                                                                                  self.start_point)) / 2.0
+        self.semi_major = (points_distance(self.sample_point, self.start_point) + points_distance(
+            self.focus_point, self.start_point)) / 2.0
 
         self.analyser_points = self._generate_analyser_segments()
 
@@ -95,37 +95,6 @@ class GeometryContext(object):
         bb = 2 * np.cos(phi) * np.sin(phi) * (1. / a ** 2 - 1. / b ** 2)
         cc = np.sin(phi) ** 2 / a ** 2 + np.cos(phi) ** 2 / b ** 2
         return aa, bb, cc, h, k
-
-    # def _analyser_edges(self, focus, a, detector_line):
-    #     def intersect_on_ellipse(aa, bb, cc, h, k, m):
-    #         # gives the intersect of one line, y = mx, with the ellipse described by the parameters (aa, bb, cc, h, k)
-    #         polynomial_parameters = np.empty(3)
-    #         polynomial_parameters[0] = aa + bb * m + cc * m ** 2
-    #         polynomial_parameters[1] = -2 * aa * h - bb * (m * h + k) - 2 * cc * m * k
-    #         polynomial_parameters[2] = aa * h ** 2 + bb * h * k + cc * k ** 2 - 1
-    #         x = np.roots(polynomial_parameters)
-    #         x = x[x > 0]
-    #         if len(x) == 1:
-    #             x = x[0]
-    #         elif len(x) == 0:
-    #             raise RuntimeError("No x-component of the point has been found.")
-    #         else:
-    #             raise RuntimeError("Too many values of the x-component have been found.")
-    #         y = m * x
-    #         if abs(aa * (x - h) ** 2 + bb * (x - h) * (y - k) + cc * (y - k) ** 2 - 1) < ZERO_TOL:
-    #             return [x, y]
-    #         else:
-    #             raise RuntimeError("Something wrong when solving the ellipse edge points.")
-    #
-    #     aa, bb, cc, = self._ellipse_points_to_parameters()
-    #
-    #     edge_up = intersect_on_ellipse(aa, bb, cc, h, k, np.tan(np.deg2rad(50)))
-    #     edge_down = intersect_on_ellipse(aa, bb, cc, h, k, np.tan(-np.deg2rad(10)))
-    #     line_fd1 = get_line_through_points(focus, edge_up)
-    #     line_fd2 = get_line_through_points(focus, edge_down)
-    #     detector_in = get_intersect_two_lines(line_fd1, detector_line)
-    #     detector_out = get_intersect_two_lines(line_fd2, detector_line)
-    #     return edge_up, edge_down, detector_in, detector_out
 
     def _generate_analyser_segments(self):
         # generates the analyser with a finite segment size
@@ -346,21 +315,20 @@ def get_resolution_qxy(geo_ctx: GeometryContext, instrument: InstrumentContext, 
     return delta_qxy
 
 
-def get_resolution_qx(geo_ctx: GeometryContext, instrument: InstrumentContext, kf, phi, theta, analyser_point_now,
-                      analyser_point_nearest, qxy, ki=None):
-    if ki is None:
-        ki = kf
-    delta_kf = get_delta_kf(geo_ctx, instrument=instrument, analyser_point_now=analyser_point_now,
-                            analyser_point_nearest=analyser_point_nearest, kf=kf)
-    delta_phi = get_delta_phi(geo_ctx, instrument=instrument, analyser_point=analyser_point_now)
+def get_dq_mcstas_coordinate(geo_ctx: GeometryContext, instrument: InstrumentContext, kf, analyser_point_now,
+                             analyser_point_nearest, ki=None):
+    # if ki is None:
+    #     ki = kf
+    dkf = get_delta_kf(geo_ctx, instrument=instrument, analyser_point_now=analyser_point_now,
+                       analyser_point_nearest=analyser_point_nearest, kf=kf)
+    dphi = get_delta_phi(geo_ctx, instrument=instrument, analyser_point=analyser_point_now)
     # delta_phi = np.sqrt(np.sum(np.square([divergence_analyser_point(geo_ctx, analyser_point=analyser_point)])))
     dtheta_sample = np.sqrt(np.sum(np.square([divergence_analyser_point(geo_ctx, analyser_point=analyser_point_now)])))
 
-    qx_kf = np.cos(phi) * np.cos(theta)
-    qx_phi = -kf * np.sin(phi) * np.cos(theta)
-    qx_theta = - kf * np.cos(phi) * np.sin(theta)
-    delta_qx = np.sqrt(np.sum(np.square([qx_kf * delta_kf, qx_phi * delta_phi, qx_theta * dtheta_sample])))
-    return delta_qx
+    dqx = kf * np.sin(dtheta_sample)
+    dqy = kf * np.sin(dphi)
+    dqz = dkf * np.cos(dphi) * np.cos(dtheta_sample)
+    return [dqx, dqy, dqz]
 
 
 def get_resolution_qy(geo_ctx: GeometryContext, instrument: InstrumentContext, kf, phi, theta, analyser_point_now,
@@ -623,28 +591,24 @@ def plot_resolution_comparison(all_qxy, all_dqxy, all_delta_qxy_rob, all_qz, all
     plt.close(5)
 
 
-def plot_resolution_polarangles(geo_ctx: GeometryContext, all_dq_transformed, number_azimuthal):
+def plot_resolution_polarangles(geo_ctx: GeometryContext, all_dqx_m, all_dqy_m, all_dqz_m):
     # plot the horizontal component of the q-resolution calculated by us
-    polar_angles = np.repeat(np.rad2deg(np.arctan(geo_ctx.analyser_points[1] / geo_ctx.analyser_points[0])),
-                             number_azimuthal)
+    polar_angles = np.rad2deg(np.arctan(geo_ctx.analyser_points[1] / geo_ctx.analyser_points[0]))
     plt.figure(6)
-    all_dq_transformed = np.abs(all_dq_transformed)
     plt.subplot(131)
-    plt.plot(polar_angles, all_dq_transformed[:, 0] * 1e-10, '.')
-    plt.xlabel(r"Polar angle $\phi$ (degree)")
+    plt.plot(polar_angles, all_dqx_m * 1e-10, '.')
     plt.ylabel(r"$\Delta Q$ (Angstrom -1)")
     plt.grid()
     plt.title('x')
     plt.tight_layout()
     plt.subplot(132)
-    plt.plot(polar_angles, all_dq_transformed[:, 1] * 1e-10, '.')
+    plt.plot(polar_angles, all_dqy_m * 1e-10, '.')
     plt.xlabel(r"Polar angle $\phi$ (degree)")
     plt.grid()
     plt.title('y')
     plt.tight_layout()
     plt.subplot(133)
-    plt.plot(polar_angles, all_dq_transformed[:, 2] * 1e-10, '.')
-    plt.xlabel(r"Polar angle $\phi$ (degree)")
+    plt.plot(polar_angles, all_dqz_m * 1e-10, '.')
     plt.grid()
     plt.title('z')
     plt.tight_layout()
@@ -660,7 +624,9 @@ def resolution_calculation(geo_ctx: GeometryContext, instrument: InstrumentConte
     all_qz = []
     all_dqxy = []
     all_dqz = []
-    all_dq_transformed = []
+    all_dqx_m = []
+    all_dqy_m = []
+    all_dqz_m = []
 
     # calculate the q-resolution for each segment on the analyser, which gives different q-vectors
     # the outer loop is for the polar angle, and the inner one for the azimuthal angle
@@ -683,14 +649,14 @@ def resolution_calculation(geo_ctx: GeometryContext, instrument: InstrumentConte
             qxy = get_qxy(kf_vector=kf_vector)  # horizontal component of q-vector
             delta_qxy = get_resolution_qxy(geo_ctx=geometryctx, instrument=instrument, analyser_point_now=point_now,
                                            analyser_point_nearest=point_nearest, kf=kf, phi=phi, qxy=qxy, theta=theta)
-            delta_qx = get_resolution_qx(geo_ctx=geometryctx, instrument=instrument, analyser_point_now=point_now,
-                                         analyser_point_nearest=point_nearest, kf=kf, phi=phi, qxy=qxy, theta=theta)
-            delta_qy = get_resolution_qy(geo_ctx=geometryctx, instrument=instrument, analyser_point_now=point_now,
-                                         analyser_point_nearest=point_nearest, kf=kf, phi=phi, qxy=qxy, theta=theta)
-            dq_transformed = coordinate_transformation(theta=theta, phi=phi, vector=[delta_qx, delta_qy, delta_qz])
-            all_dq_transformed.append(list(dq_transformed))
             all_qxy.append(qxy)
             all_dqxy.append(delta_qxy)
+        dqx_m, dqy_m, dqz_m = get_dq_mcstas_coordinate(geo_ctx=geometryctx, instrument=instrument,
+                                                       analyser_point_now=point_now,
+                                                       analyser_point_nearest=point_nearest, kf=kf)
+        all_dqx_m.append(dqx_m)
+        all_dqy_m.append(dqy_m)
+        all_dqz_m.append(dqz_m)
         all_qz.append(qz)
         all_dqz.append(delta_qz)
 
@@ -698,8 +664,10 @@ def resolution_calculation(geo_ctx: GeometryContext, instrument: InstrumentConte
     all_qz = np.array(all_qz)
     all_dqxy = np.array(all_dqxy)
     all_dqz = np.array(all_dqz)
-    all_dq_transformed = np.array(all_dq_transformed)
-    return all_qxy, all_qz, all_dqxy, all_dqz, all_dq_transformed
+    all_dqx_m = np.array(all_dqx_m)
+    all_dqy_m = np.array(all_dqy_m)
+    all_dqz_m = np.array(all_dqz_m)
+    return all_qxy, all_qz, all_dqxy, all_dqz, all_dqx_m, all_dqy_m, all_dqz_m
 
 
 geometryctx = GeometryContext(side="same")
@@ -721,12 +689,12 @@ azimuthal_stop = np.deg2rad(170.)  # radian
 number_points = round(abs(azimuthal_start - azimuthal_stop / angle_one_segment))
 azimuthal_angles = np.linspace(azimuthal_start, azimuthal_stop, num=number_points)
 
-all_qxy, all_qz, all_dqxy, all_dqz, all_dq_transformed = resolution_calculation(geo_ctx=geometryctx,
-                                                                                instrument=instrumentctx,
-                                                                                azimuthal_angles=azimuthal_angles)
+all_qxy, all_qz, all_dqxy, all_dqz, all_dqx_m, all_dqy_m, all_dqz_m = resolution_calculation(geo_ctx=geometryctx,
+                                                                                             instrument=instrumentctx,
+                                                                                             azimuthal_angles=azimuthal_angles)
 
 # plot_whole_geometry(geo_ctx=geometryctx, instrument=instrumentctx)
-plot_resolution_polarangles(geo_ctx=geometryctx, all_dq_transformed=all_dq_transformed, number_azimuthal=number_points)
+plot_resolution_polarangles(geo_ctx=geometryctx, all_dqx_m=all_dqx_m, all_dqy_m=all_dqy_m, all_dqz_m=all_dqz_m)
 # plot_analyser_comparison(points_analyser_x=geometryctx.analyser_ellipse_points[0],
 #                          points_analyser_y=geometryctx.analyser_ellipse_points[1],
 #                          points_x=geometryctx.analyser_points[0], points_y=geometryctx.analyser_points[1])

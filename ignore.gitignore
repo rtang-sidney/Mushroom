@@ -9,7 +9,7 @@ target/
 venv
 
 target
+test.py
 *.pdf
 *.png
 *.txt
-test.py

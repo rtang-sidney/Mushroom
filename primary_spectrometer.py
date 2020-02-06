@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
-from helper import wavelength_to_eV, points_distance, get_angle, vector_bisector, InstrumentContext
+from helper import wavelength_to_eV, points_distance, get_angle, vector_bisector
 
 ZERO_TOL = 1e-6
 
@@ -170,6 +170,14 @@ class GeometryContext(object):
         return np.array(detector_x), np.array(detector_y)
 
 
+class InstrumentContext(object):
+    def __init__(self):
+        self.moasic_analyser = np.deg2rad(0.8)  # radian, analyser mosaic
+        self.deltad_d = 6e-4  # relative uncertainty of the lattice distance, given in [paper2]
+        self.pg_lattice_distance = 3.35e-10  # m, lattice distance d of a PG crystal
+        self.analyser_segment = 1e-2  # m, the size of an analyser segment in 1D
+
+
 def points_to_vector(point1, point2):
     # gives the vector pointing from the point1 to point2 (direction important)
     return [point2[0] - point1[0], point2[1] - point1[1]]
@@ -198,6 +206,19 @@ def lines_intersect(line1, line2):
         return x1, x2
     else:
         raise RuntimeError("The line parameters provided are not valid. Try again.")
+
+
+def wavelength_bragg(geo_ctx: GeometryContext, instrument: InstrumentContext, analyser_point, order_parameter=1):
+    # gives the wavelength from the Bragg's law
+    scattering_2theta = analyser_twotheta(geo_ctx=geo_ctx, instrument=instrument, analyser_point=analyser_point)
+    return 2. * instrument.pg_lattice_distance * np.sin(scattering_2theta / 2.) / float(order_parameter)
+
+
+def wavenumber_bragg(geo_ctx: GeometryContext, instrument: InstrumentContext, analyser_point, order_parameter=1):
+    # gives the wave number from the Bragg's law
+    wavelength = wavelength_bragg(geo_ctx=geo_ctx, instrument=instrument, analyser_point=analyser_point,
+                                  order_parameter=order_parameter)
+    return 2. * np.pi / wavelength
 
 
 def analyser_twotheta(geo_ctx: GeometryContext, instrument: InstrumentContext, analyser_point):
@@ -325,19 +346,6 @@ def get_dq_mcstas_coordinate(geo_ctx: GeometryContext, instrument: InstrumentCon
     # print(np.rad2deg(np.arctan(analyser_point_now[1] / analyser_point_now[0])), np.rad2deg(dtheta), kf * 1e-10,
     #       dqx * 1e-10)
     return [dqx, dqy, dqz]
-
-
-def wavelength_bragg(geo_ctx: GeometryContext, instrument: InstrumentContext, analyser_point, order_parameter=1):
-    # gives the wavelength from the Bragg's law
-    scattering_2theta = analyser_twotheta(geo_ctx=geo_ctx, instrument=instrument, analyser_point=analyser_point)
-    return 2. * instrument.lattice_distance_pg002 * np.sin(scattering_2theta / 2.) / float(order_parameter)
-
-
-def wavenumber_bragg(geo_ctx: GeometryContext, instrument: InstrumentContext, analyser_point, order_parameter=1):
-    # gives the wave number from the Bragg's law
-    wavelength = wavelength_bragg(geo_ctx=geo_ctx, instrument=instrument, analyser_point=analyser_point,
-                                  order_parameter=order_parameter)
-    return 2. * np.pi / wavelength
 
 
 def get_resolution_qy(geo_ctx: GeometryContext, instrument: InstrumentContext, kf, phi, theta, analyser_point_now,
@@ -708,7 +716,6 @@ all_kf = np.array(list(map(lambda x, y: wavenumber_bragg(geo_ctx=geometryctx, in
 plot_whole_geometry(geo_ctx=geometryctx, instrument=instrumentctx)
 plot_resolution_polarangles(geo_ctx=geometryctx, polar_angles=polar_angles, all_dqx_m=all_dqx_m, all_dqy_m=all_dqy_m,
                             all_dqz_m=all_dqz_m, all_kf=all_kf)
-
 # plot_analyser_comparison(points_analyser_x=geometryctx.analyser_ellipse_points[0],
 #                          points_analyser_y=geometryctx.analyser_ellipse_points[1],
 #                          points_x=geometryctx.analyser_points[0], points_y=geometryctx.analyser_points[1])

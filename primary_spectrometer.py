@@ -1,9 +1,8 @@
 import matplotlib.pyplot as plt
 import numpy as np
-
 from helper import wavelength_to_eV, points_distance, get_angle, vector_bisector, wavenumber_to_2theta_bragg, \
-    InstrumentContext
-from geometry import GeometryContext
+    InstrumentContext, wavelength_to_wavenumber
+from geometry_context import GeometryContext
 
 ZERO_TOL = 1e-6
 
@@ -13,10 +12,9 @@ ZERO_TOL = 1e-6
 
 """
 
-
 # def get_divergence(sample, analyser_point, focus, sample_size, focus_size):
 def divergence_mono(geo_ctx: GeometryContext, instrument: InstrumentContext):
-    # sa: sample-analyser; af: analyser-focus
+    # ms: monochromator-sample
     divergence_in = instrument.divergence_initial
     divergence_out = geo_ctx.sample_size / instrument.distance_ms
     return divergence_in, divergence_out
@@ -47,6 +45,18 @@ def get_delta_ki(geo_ctx: GeometryContext, instrument: InstrumentContext, ki):
 geometryctx = GeometryContext(side="same")
 instrumentctx = InstrumentContext()
 
-ki = 1.45 * 1e10  # m^-1
-dki = get_delta_ki(geo_ctx=geometryctx, instrument=instrumentctx, ki=ki)
-print("dki for ki = {}: {}".format(ki * 1e-10, dki * 1e-10))
+filename = "Resolution_Primary.pdf"
+
+wavelength_incoming = np.linspace(start=3.5, stop=6, num=100) * 1e-10  # m, wavelength
+wavenumber_incoming = wavelength_to_wavenumber(wavelength_incoming)
+dki = get_delta_ki(geo_ctx=geometryctx, instrument=instrumentctx, ki=wavenumber_incoming)
+
+fig, ax = plt.subplots(constrained_layout=True)
+ax.plot(wavenumber_incoming * 1e-10, dki * 1e-10)
+ax.tick_params(axis="x", direction="in")
+ax.tick_params(axis="y", direction="in")
+ax.set_xlabel(r"Incoming wavenumber $k_i$ (angstrom$^{-1}$)")
+ax.set_ylabel(r"$\Delta k_i$ (angstrom$^{-1}$)")
+ax.grid()
+plt.savefig(filename, bbox_inches='tight')
+print("{:s} plotted.".format(filename))

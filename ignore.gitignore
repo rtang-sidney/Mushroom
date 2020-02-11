@@ -1,17 +1,11 @@
-target/
-.idea
+.idea/
 
-target/
-__pycache__
+__pycache__/
 
 
-target/
-venv
+venv/
 
-target
 *.pdf
 *.png
 *.txt
-
-target
-test.py
+test

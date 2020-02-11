@@ -63,10 +63,10 @@ def get_delta_theta(geo_ctx: GeometryContext, instrument: InstrumentContext, ana
     distance_sa = points_distance(point1=geo_ctx.sample_point, point2=analyser_point)
     distance_af = points_distance(point1=analyser_point, point2=geo_ctx.focus_point)
     # if distance_sa < distance_af:
-    #     dtheta = geo_ctx.sample_size / distance_sa
+    #     dtheta = instrument.sample_size / distance_sa
     # else:
     #     dtheta = geo_ctx.focus_size / distance_af
-    dtheta = geo_ctx.sample_size / distance_sa
+    dtheta = instrument.sample_size / distance_sa
     return dtheta
 
 
@@ -83,9 +83,9 @@ def divergence_analyser_point(geo_ctx: GeometryContext, instrument: InstrumentCo
     # sa: sample-analyser; af: analyser-focus
     distance_sa = points_distance(point1=geo_ctx.sample_point, point2=analyser_point)
     distance_af = points_distance(point1=analyser_point, point2=geo_ctx.focus_point)
-    divergence_in = (geo_ctx.sample_size + instrument.analyser_segment) / distance_sa
+    divergence_in = (instrument.sample_size + instrument.analyser_segment) / distance_sa
     divergence_out = (geo_ctx.focus_size + instrument.analyser_segment) / distance_af
-    # divergence_in = geo_ctx.sample_size / distance_sa
+    # divergence_in = instrument.sample_size / distance_sa
     # divergence_out = geo_ctx.focus_size / distance_af
     return divergence_in, divergence_out
 

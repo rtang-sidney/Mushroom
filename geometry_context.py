@@ -7,7 +7,6 @@ class GeometryContext(object):
     def __init__(self, side="same"):
         self.sample_point = (0.0, 0.0)  # m
 
-        self.sample_size = 4e-2  # m
         self.focus_size = 4e-2  # m
 
         self.ellipse_number = 100  # number of points to form the ideal ellipse

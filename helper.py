@@ -10,7 +10,7 @@ class InstrumentContext(object):
         self.analyser_segment = 1e-2  # m, the size of an analyser segment in 1D
         self.distance_ms = 1.0  # m, distance between the monochromator and sample
         self.divergence_initial = np.deg2rad(1.6)  # initial divergence directly from the neutron guide
-
+        self.sample_size = 4e-2  # m
 
 MASS_NEUTRON = 1.67492749804e-27  # kg
 PLANCKS_CONSTANT = 1.0545718e-34  # m2 kg / s

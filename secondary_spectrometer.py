@@ -2,7 +2,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from geometry_context import GeometryContext
-from helper import wavelength_to_eV, points_distance, get_angle, vector_bisector, InstrumentContext, points_to_vector
+from helper import wavelength_to_eV, points_distance, get_angle, vector_bisector, InstrumentContext, points_to_vector, \
+    get_kf_vector, points_to_slope_radian, unit_vector, vector_project_a2b
 
 """
 [Paper1]: Demmel2014 http://dx.doi.org/10.1016/j.nima.2014.09.019
@@ -15,18 +16,17 @@ from helper import wavelength_to_eV, points_distance, get_angle, vector_bisector
 # line: ax + by = c -> (a, b, c)
 
 
-def analyser_twotheta(geo_ctx: GeometryContext, instrument: InstrumentContext, analyser_point):
+def get_twotheta_analyser(geo_ctx: GeometryContext, analyser_point):
     vector_sa = points_to_vector(geo_ctx.sample_point, analyser_point)  # sa = sample_analyser
     vector_af = points_to_vector(analyser_point, geo_ctx.focus_point)  # af = analyser_focus
     return get_angle(vector_sa, vector_af)
 
 
 # def get_analyser_angular_spread(geo_ctx: GeometryContext, sample, analyser_point, focus_point):
-def angular_spread_analyser(geo_ctx: GeometryContext, instrument: InstrumentContext, analyser_point):
+def get_angular_resolution_analyser(geo_ctx: GeometryContext, instrument: InstrumentContext, analyser_point):
     eta = instrument.moasic_analyser  # mosaic
-    alpha_i, alpha_f = divergence_analyser_point(geo_ctx=geo_ctx, instrument=instrument,
-                                                 analyser_point=analyser_point)  # incoming and outgoing divergence
-    # alpha_i = 0.0
+    alpha_i, alpha_f = vertical_divergence_analyser(geo_ctx=geo_ctx, instrument=instrument,
+                                                    analyser_point=analyser_point)  # incoming and outgoing divergence
     # See [Paper1]
     numerator = alpha_i ** 2 * alpha_f ** 2 + eta ** 2 * alpha_i ** 2 + eta ** 2 * alpha_f ** 2
     denominator = 4 * eta ** 2 + alpha_i ** 2 + alpha_f ** 2
@@ -34,57 +34,62 @@ def angular_spread_analyser(geo_ctx: GeometryContext, instrument: InstrumentCont
     return np.sqrt(numerator / denominator)
 
 
-def get_delta_kf(geo_ctx: GeometryContext, instrument: InstrumentContext, analyser_point_now, analyser_point_nearest,
-                 kf):
-    # gives the deviation of the wave-number by means of the Bragg's law
-    dtheta_analyser = angular_spread_analyser(geo_ctx, instrument, analyser_point=analyser_point_now)
-    twotheta_analyser = analyser_twotheta(geo_ctx, instrument, analyser_point=analyser_point_now)
-    dkf_bragg = kf * np.sqrt(
-        np.sum(np.square([instrument.deltad_d, dtheta_analyser / np.tan(twotheta_analyser / 2.0)])))
-    # kf_nearest = wavenumber_bragg(geo_ctx=geo_ctx, instrument=instrument, analyser_point=analyser_point_nearest)
-    # dkf_segment = abs(kf - kf_nearest)
-    # return np.sqrt(np.sum(np.square([dkf_bragg, dkf_segment])))
-    return abs(dkf_bragg)
+def get_uncertainty_kf(geo_ctx: GeometryContext, instrument: InstrumentContext, analyser_point_now,
+                       analyser_point_nearest, kf):
+    angular_uncertainty_analyser = get_angular_resolution_analyser(geo_ctx=geo_ctx, instrument=instrument,
+                                                                   analyser_point=analyser_point_now)
+    twotheta_analyser = get_twotheta_analyser(geo_ctx=geo_ctx, analyser_point=analyser_point_now)
+    uncertainty_kf_bragg = kf * np.sqrt(np.sum(np.square(
+        [instrument.deltad_d, angular_uncertainty_analyser / np.tan(twotheta_analyser / 2.0)])))  # from Bragg's law
+    kf_nearest = wavenumber_bragg(geo_ctx=geo_ctx, instrument=instrument, analyser_point=analyser_point_nearest)
+    uncertainty_kf_segment = abs(kf - kf_nearest)
+    return max(uncertainty_kf_bragg, uncertainty_kf_segment)
 
 
-def get_delta_phi(geo_ctx: GeometryContext, instrument: InstrumentContext, analyser_point):
-    vector_sa = points_to_vector(geo_ctx.sample_point, analyser_point)
-    vector_af = points_to_vector(point1=analyser_point, point2=geo_ctx.focus_point)
-    vector_segment = vector_bisector(vector_sa, vector_af)
-    segment_projection = instrument.analyser_segment * np.cos(np.pi / 2.0 - get_angle(vector_sa, vector_af))
-    distance_sa = points_distance(point1=geo_ctx.sample_point, point2=analyser_point)
-
-    # return segment_projection / distance_sa
-    return angular_spread_analyser(geo_ctx=geo_ctx, instrument=instrument, analyser_point=analyser_point)
+def get_uncertainty_phi(geo_ctx: GeometryContext, instrument: InstrumentContext, analyser_point):
+    divergence_out = \
+        vertical_divergence_analyser(geo_ctx=geo_ctx, instrument=instrument, analyser_point=analyser_point)[1]
+    # the uncertainty of the polar angle is given by the angular resolution at the analyser
+    # return get_angular_resolution_analyser(geo_ctx=geo_ctx, instrument=instrument, analyser_point=analyser_point)
+    return divergence_out
 
 
-def get_delta_theta(geo_ctx: GeometryContext, instrument: InstrumentContext, analyser_point):
+def get_uncertainty_theta(geo_ctx: GeometryContext, instrument: InstrumentContext, analyser_point):
     # sa: sample-analyser; af: analyser-focus
     distance_sa = points_distance(point1=geo_ctx.sample_point, point2=analyser_point)
     distance_af = points_distance(point1=analyser_point, point2=geo_ctx.focus_point)
-    # if distance_sa < distance_af:
-    #     dtheta = instrument.sample_size / distance_sa
-    # else:
-    #     dtheta = geo_ctx.focus_size / distance_af
-    dtheta = instrument.sample_size / distance_sa
-    return dtheta
+    uncertainty_azimuthal_incoming = (instrument.analyser_segment + instrument.sample_diameter) / distance_sa
+    uncertainty_azimuthal_outgoing = (instrument.analyser_segment + geo_ctx.focus_size) / distance_af
+    return max(uncertainty_azimuthal_incoming, uncertainty_azimuthal_outgoing)
 
 
-def get_de_e(geo_ctx: GeometryContext, instrument: InstrumentContext, analyser_point, nearest_point):
+def get_relative_uncertainty_energy(geo_ctx: GeometryContext, instrument: InstrumentContext, analyser_point,
+                                    nearest_point):
     kf = wavenumber_bragg(geo_ctx=geo_ctx, instrument=instrument,
                           analyser_point=analyser_point)  # outgoing wave number
-    delta_kf = get_delta_kf(geo_ctx, instrument, analyser_point_now=analyser_point,
-                            analyser_point_nearest=nearest_point, kf=kf)
+    delta_kf = get_uncertainty_kf(geo_ctx, instrument, analyser_point_now=analyser_point,
+                                  analyser_point_nearest=nearest_point, kf=kf)
     return 2. * delta_kf / kf
 
 
 # def get_divergence(sample, analyser_point, focus, sample_size, focus_size):
-def divergence_analyser_point(geo_ctx: GeometryContext, instrument: InstrumentContext, analyser_point):
+def vertical_divergence_analyser(geo_ctx: GeometryContext, instrument: InstrumentContext, analyser_point):
     # sa: sample-analyser; af: analyser-focus
-    distance_sa = points_distance(point1=geo_ctx.sample_point, point2=analyser_point)
-    distance_af = points_distance(point1=analyser_point, point2=geo_ctx.focus_point)
-    divergence_in = (instrument.sample_size + instrument.analyser_segment) / distance_sa
-    divergence_out = (geo_ctx.focus_size + instrument.analyser_segment) / distance_af
+    vector_sa = points_to_vector(point1=geo_ctx.sample_point, point2=analyser_point)
+    vector_af = points_to_vector(point1=analyser_point, point2=geo_ctx.focus_point)
+    vector_tangential = vector_bisector(vector_sa, vector_af)
+    segment_analyser = unit_vector(vector_tangential) * instrument.analyser_segment
+    analyser_incoming_projection = vector_project_a2b(segment_analyser, vector_sa)
+    analyser_incoming_rejection = segment_analyser - analyser_incoming_projection
+    analyser_outgoing_projection = vector_project_a2b(segment_analyser, vector_af)
+    analyser_outgoing_rejection = segment_analyser - analyser_outgoing_projection
+
+    divergence_in = np.arctan((instrument.sample_height * abs(np.sin(
+        points_to_slope_radian(point1=geo_ctx.sample_point, point2=analyser_point))) + np.linalg.norm(
+        analyser_incoming_rejection)) / np.linalg.norm(vector_sa))
+    divergence_out = np.arctan((geo_ctx.focus_size * abs(np.sin(
+        points_to_slope_radian(point1=analyser_point, point2=geo_ctx.focus_point))) + np.linalg.norm(
+        analyser_outgoing_rejection)) / np.linalg.norm(vector_af))
     # divergence_in = instrument.sample_size / distance_sa
     # divergence_out = geo_ctx.focus_size / distance_af
     return divergence_in, divergence_out
@@ -112,12 +117,12 @@ def get_resolution_qxy(geo_ctx: GeometryContext, instrument: InstrumentContext, 
                        analyser_point_nearest, qxy, ki=None):
     if ki is None:
         ki = kf
-    delta_kf = get_delta_kf(geo_ctx, instrument=instrument, analyser_point_now=analyser_point_now,
-                            analyser_point_nearest=analyser_point_nearest, kf=kf)
-    delta_phi = get_delta_phi(geo_ctx, instrument=instrument, analyser_point=analyser_point_now)
+    delta_kf = get_uncertainty_kf(geo_ctx, instrument=instrument, analyser_point_now=analyser_point_now,
+                                  analyser_point_nearest=analyser_point_nearest, kf=kf)
+    delta_phi = get_uncertainty_phi(geo_ctx, instrument=instrument, analyser_point=analyser_point_now)
     # delta_phi = np.sqrt(np.sum(np.square([divergence_analyser_point(geo_ctx, analyser_point=analyser_point)])))
     dtheta_sample = np.sqrt(np.sum(np.square(
-        [divergence_analyser_point(geo_ctx=geo_ctx, instrument=instrument, analyser_point=analyser_point_now)])))
+        [vertical_divergence_analyser(geo_ctx=geo_ctx, instrument=instrument, analyser_point=analyser_point_now)])))
 
     qxy_kf = np.cos(phi) * (kf * np.cos(phi) - ki * np.cos(theta)) / qxy
     qxy_phi = -kf * np.sin(phi) * (kf * np.cos(phi) - ki * np.cos(theta)) / qxy
@@ -128,14 +133,14 @@ def get_resolution_qxy(geo_ctx: GeometryContext, instrument: InstrumentContext, 
 
 def get_dq_mcstas_coordinate(geo_ctx: GeometryContext, instrument: InstrumentContext, kf, analyser_point_now,
                              analyser_point_nearest):
-    dkf = get_delta_kf(geo_ctx, instrument=instrument, analyser_point_now=analyser_point_now,
-                       analyser_point_nearest=analyser_point_nearest, kf=kf)
-    dphi = get_delta_phi(geo_ctx, instrument=instrument, analyser_point=analyser_point_now)
+    dkf = get_uncertainty_kf(geo_ctx, instrument=instrument, analyser_point_now=analyser_point_now,
+                             analyser_point_nearest=analyser_point_nearest, kf=kf)
+    dphi = get_uncertainty_phi(geo_ctx, instrument=instrument, analyser_point=analyser_point_now)
     # delta_phi = np.sqrt(np.sum(np.square([divergence_analyser_point(geo_ctx, analyser_point=analyser_point)])))
-    dtheta = get_delta_theta(geo_ctx=geo_ctx, instrument=instrument, analyser_point=analyser_point_now)
+    dtheta = get_uncertainty_theta(geo_ctx=geo_ctx, instrument=instrument, analyser_point=analyser_point_now)
 
-    dqx = kf * np.sin(dtheta)
-    dqy = kf * np.sin(dphi)
+    dqx = kf * np.tan(dtheta)
+    dqy = kf * np.tan(dphi)
     dqz = dkf
     # print(np.rad2deg(np.arctan(analyser_point_now[1] / analyser_point_now[0])), np.rad2deg(dtheta), kf * 1e-10,
     #       dqx * 1e-10)
@@ -144,7 +149,7 @@ def get_dq_mcstas_coordinate(geo_ctx: GeometryContext, instrument: InstrumentCon
 
 def wavelength_bragg(geo_ctx: GeometryContext, instrument: InstrumentContext, analyser_point, order_parameter=1):
     # gives the wavelength from the Bragg's law
-    scattering_2theta = analyser_twotheta(geo_ctx=geo_ctx, instrument=instrument, analyser_point=analyser_point)
+    scattering_2theta = get_twotheta_analyser(geo_ctx=geo_ctx, analyser_point=analyser_point)
     return 2. * instrument.lattice_distance_pg002 * np.sin(scattering_2theta / 2.) / float(order_parameter)
 
 
@@ -157,12 +162,12 @@ def wavenumber_bragg(geo_ctx: GeometryContext, instrument: InstrumentContext, an
 
 def get_resolution_qy(geo_ctx: GeometryContext, instrument: InstrumentContext, kf, phi, theta, analyser_point_now,
                       analyser_point_nearest, qxy, ki=None):
-    delta_kf = get_delta_kf(geo_ctx, instrument=instrument, analyser_point_now=analyser_point_now,
-                            analyser_point_nearest=analyser_point_nearest, kf=kf)
-    delta_phi = get_delta_phi(geo_ctx, instrument=instrument, analyser_point=analyser_point_now)
+    delta_kf = get_uncertainty_kf(geo_ctx, instrument=instrument, analyser_point_now=analyser_point_now,
+                                  analyser_point_nearest=analyser_point_nearest, kf=kf)
+    delta_phi = get_uncertainty_phi(geo_ctx, instrument=instrument, analyser_point=analyser_point_now)
     # delta_phi = np.sqrt(np.sum(np.square([divergence_analyser_point(geo_ctx, analyser_point=analyser_point)])))
     dtheta_sample = np.sqrt(np.sum(np.square(
-        [divergence_analyser_point(geo_ctx=geo_ctx, instrument=instrument, analyser_point=analyser_point_now)])))
+        [vertical_divergence_analyser(geo_ctx=geo_ctx, instrument=instrument, analyser_point=analyser_point_now)])))
 
     qy_kf = np.cos(phi) * np.sin(theta)
     qy_phi = -kf * np.sin(phi) * np.sin(theta)
@@ -173,9 +178,9 @@ def get_resolution_qy(geo_ctx: GeometryContext, instrument: InstrumentContext, k
 
 def get_resolution_qz(geo_ctx: GeometryContext, instrument: InstrumentContext, kf, phi, analyser_point_now,
                       analyser_point_nearest):
-    delta_kf = get_delta_kf(geo_ctx, instrument=instrument, analyser_point_now=analyser_point_now,
-                            analyser_point_nearest=analyser_point_nearest, kf=kf)
-    delta_phi = get_delta_phi(geo_ctx, instrument=instrument, analyser_point=analyser_point_now)
+    delta_kf = get_uncertainty_kf(geo_ctx, instrument=instrument, analyser_point_now=analyser_point_now,
+                                  analyser_point_nearest=analyser_point_nearest, kf=kf)
+    delta_phi = get_uncertainty_phi(geo_ctx, instrument=instrument, analyser_point=analyser_point_now)
 
     qz_kf = np.sin(phi)
     qz_phi = kf * np.cos(phi)
@@ -191,26 +196,6 @@ def get_qxy(kf_vector):
 
 def get_qz(kf, polar_angle):
     return kf * np.sin(polar_angle)
-
-
-def get_kf_vector(kf_norm, azimuthal, polar):
-    """
-    to calculate the full vector of k_f (the wave vector after scattering at the sample and before the analyser)
-    :param kf_norm: the norm of k_f
-    :param azimuthal: azimuthal angle theta, which is half of the scattering angle at the sample
-    :param polar: polar angle phi
-    :return: k_f vector with its components in all three dimensions
-    """
-    if not isinstance(kf_norm, float):
-        raise RuntimeError("Wrong type of kf given")
-    if not isinstance(azimuthal, float):
-        raise RuntimeError("Wrong type of azimuthal angle given")
-    if not isinstance(polar, float):
-        raise RuntimeError("Wrong type of polar angle given")
-
-    kf = np.array([np.cos(polar) * np.cos(azimuthal), np.cos(polar) * np.sin(azimuthal), np.sin(polar)])
-    kf *= kf_norm
-    return kf
 
 
 # to compare the analyser generated by the two different methods
@@ -247,8 +232,9 @@ def plot_whole_geometry(geo_ctx: GeometryContext, instrument: InstrumentContext)
     def plot_for_analyser_point(instrument: InstrumentContext, analyser_point, nearest_point, detector_point):
         energy_ev = wavelength_to_eV(
             wavelength=wavelength_bragg(instrument=instrument, analyser_point=analyser_point, geo_ctx=geo_ctx))
-        e_resolution_ev = get_de_e(geo_ctx=geo_ctx, analyser_point=analyser_point, nearest_point=nearest_point,
-                                   instrument=instrument)
+        e_resolution_ev = get_relative_uncertainty_energy(geo_ctx=geo_ctx, analyser_point=analyser_point,
+                                                          nearest_point=nearest_point,
+                                                          instrument=instrument)
         e_resolution_ev *= energy_ev
 
         line_sp_plot = ([geo_ctx.sample_point[0], analyser_point[0]], [geo_ctx.sample_point[1], analyser_point[1]])

@@ -1,3 +1,4 @@
+import numpy
 import numpy as np
 
 
@@ -8,9 +9,11 @@ class InstrumentContext(object):
         self.deltad_d = 6e-4  # relative uncertainty of the lattice distance, given in [paper2]
         self.lattice_distance_pg002 = 3.35e-10  # m, lattice distance d of a PG crystal
         self.analyser_segment = 1e-2  # m, the size of an analyser segment in 1D
-        self.distance_ms = 1.0  # m, distance between the monochromator and sample
+        self.distance_ms = 1.0  # m, monochromator-sample distance
         self.divergence_initial = np.deg2rad(1.6)  # initial divergence directly from the neutron guide
-        self.sample_size = 4e-2  # m
+        self.sample_diameter = 1e-2  # m
+        self.sample_height = 5e-2  # m
+
 
 MASS_NEUTRON = 1.67492749804e-27  # kg
 PLANCKS_CONSTANT = 1.0545718e-34  # m2 kg / s
@@ -111,3 +114,51 @@ def lines_intersect(line1, line2):
         return x1, x2
     else:
         raise RuntimeError("The line parameters provided are not valid. Try again.")
+
+
+def get_kf_vector(kf_norm, azimuthal, polar):
+    """
+    to calculate the full vector of k_f (the wave vector after scattering at the sample and before the analyser)
+    :param kf_norm: the norm of k_f
+    :param azimuthal: azimuthal angle theta, which is half of the scattering angle at the sample
+    :param polar: polar angle phi
+    :return: k_f vector with its components in all three dimensions
+    """
+    if not isinstance(kf_norm, float):
+        raise RuntimeError("Wrong type of kf given")
+    if not isinstance(azimuthal, float):
+        raise RuntimeError("Wrong type of azimuthal angle given")
+    if not isinstance(polar, float):
+        raise RuntimeError("Wrong type of polar angle given")
+
+    kf = np.array([np.cos(polar) * np.cos(azimuthal), np.cos(polar) * np.sin(azimuthal), np.sin(polar)])
+    kf *= kf_norm
+    return kf
+
+
+def angle_isoceles(a, c, b=None):
+    if b is None:
+        b = a
+    return np.arccos((a ** 2 + b ** 2 - c ** 2) / (2 * a * b))
+
+
+def points_to_slope_radian(point1, point2):
+    vector12 = points_to_vector(point1=point1, point2=point2)
+    if abs(vector12[0]) > ZERO_TOL:
+        return np.arctan(vector12[1] / vector12[0])
+    else:
+        return np.pi / 2.0
+
+
+def unit_vector(vector):
+    return vector / np.linalg.norm(vector)
+
+
+def vector_project_a2b(vector_a, vector_b):
+    vector_a = np.array(vector_a)
+    vector_b = np.array(vector_b)
+    return np.dot(vector_a, vector_b) / np.linalg.norm(vector_b) ** 2 * vector_b
+
+
+def vector_rejection(vector, vector_projection):
+    return vector - vector_projection

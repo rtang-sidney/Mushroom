@@ -1,8 +1,6 @@
 import matplotlib.pyplot as plt
 import numpy as np
-from helper import wavelength_to_eV, points_distance, get_angle, vector_bisector, wavenumber_to_2theta_bragg, \
-    InstrumentContext, wavelength_to_wavenumber
-from geometry_context import GeometryContext
+from helper import wavenumber_to_2theta_bragg, InstrumentContext, wavelength_to_wavenumber, angle_isoceles
 
 ZERO_TOL = 1e-6
 
@@ -23,9 +21,9 @@ def get_resolution_monochromator(instrument: InstrumentContext, ki):
     """
 
     def divergence_mono(instrument: InstrumentContext):
-        # ms: monochromator-sample
+        # distance_ms: monochromator-sample distance
         divergence_in = instrument.divergence_initial
-        divergence_out = instrument.sample_size / instrument.distance_ms
+        divergence_out = instrument.sample_diameter / instrument.distance_ms
         return divergence_in, divergence_out
 
     def angular_spread_monochromator(instrument: InstrumentContext):
@@ -41,19 +39,19 @@ def get_resolution_monochromator(instrument: InstrumentContext, ki):
 
     def get_delta_ki(instrument: InstrumentContext, ki):
         # gives the deviation of the wave-number by means of the Bragg's law
-        dtheta_analyser = angular_spread_monochromator(instrument=instrument)
-        twotheta_analyser = monochromator_twotheta(instrument=instrument, ki=ki)
+        dtheta_mono = angular_spread_monochromator(instrument=instrument)
+        twotheta_mono = monochromator_twotheta(instrument=instrument, ki=ki)
         dki_bragg = ki * np.sqrt(
-            np.sum(np.square([instrument.deltad_d, dtheta_analyser / np.tan(twotheta_analyser / 2.0)])))
+            np.sum(np.square([instrument.deltad_d, dtheta_mono / np.tan(twotheta_mono / 2.0)])))
         return abs(dki_bragg)
 
     def get_spread_polar(instrument: InstrumentContext):
         # the spread of the polar angle is given simply by the divergence in both directions since there is no scattering
         # angles to be taken into consideration in this direction
-        return np.sum(np.square([divergence_mono(instrument=instrument)]))
+        return angle_isoceles(instrument.distance_ms, instrument.sample_height)
 
     def get_spread_arzimuthal(instrument: InstrumentContext):
-        return angular_spread_monochromator(instrument=instrument)
+        return angle_isoceles(instrument.distance_ms, instrument.sample_diameter)
 
     dki = get_delta_ki(instrument=instrument, ki=ki)
     dtheta = get_spread_arzimuthal(instrument=instrument)
@@ -91,7 +89,7 @@ def plot_resolution(ki, dqx, dqy, dqz, filename):
     ax2 = ax.twinx()  # instantiate a second axes that shares the same x-axis
     colour_ax2 = "green"
     ax2.plot(ki * 1e-10, dqz / ki * 1e2, color=colour_ax2)
-    ax2.set_ylabel(r"$\dfrac{\Delta k_i}{k_i}$ (%)", color=colour_ax2)
+    ax2.set_ylabel(r"$\dfrac{\Delta k_i}{k_i}$ * 100%", color=colour_ax2)
     ax2.tick_params(axis='y', labelcolor=colour_ax2)
 
     plt.savefig(filename, bbox_inches='tight')

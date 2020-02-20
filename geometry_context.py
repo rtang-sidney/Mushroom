@@ -1,6 +1,7 @@
 import numpy as np
 
-from helper import points_distance, vector_bisector, ZERO_TOL, points_to_line, points_to_vector, lines_intersect
+from helper import points_distance, vector_bisector, ZERO_TOL, points_to_line, points_to_vector, lines_intersect, \
+    unit_vector, InstrumentContext
 
 
 class GeometryContext(object):
@@ -15,12 +16,12 @@ class GeometryContext(object):
             50.)  # radian, the slope of the line from the sample to the upmost point on the analyser
         self.angle_minus = np.deg2rad(
             -10.)  # radian, the slope of the line from the sample to the downmost point on the analyser
-        self.start_distance = 0.4 * 2.0 ** 0.5  # m, the distance from the sample to the upmost point of the analyser
+        self.start_distance = 0.8  # m, the distance from the sample to the upmost point of the analyser
         self.start_point = [self.start_distance * np.cos(self.angle_plus),
                             self.start_distance * np.sin(self.angle_plus)]
 
         if side == "same":
-            self.focus_point = (0.90, -0.25)  # m
+            self.focus_point = (0.9, -0.4)  # m
             self.filename_geometry = 'Geometry_SameSide2.pdf'
             self.filename_horizontal = 'QResolution_Horizontal_SameSide.pdf'
             self.filename_vertical = 'QResolution_Vertical_SameSide.pdf'
@@ -35,7 +36,9 @@ class GeometryContext(object):
         self.semi_major = (points_distance(self.sample_point, self.start_point) + points_distance(
             self.focus_point, self.start_point)) / 2.0
 
-        self.analyser_points = self._generate_analyser_segments()
+        self.analyser_segment_size = 1e-2  # m
+        instrumentctx = InstrumentContext()
+        self.analyser_points = self._generate_analyser_segments(instrument=instrumentctx)
 
         # if the analyser is generated as a part of an ideal ellipse:
         self.analyser_ellipse_points = self._generate_analyser_ellipse()
@@ -63,11 +66,8 @@ class GeometryContext(object):
         cc = np.sin(phi) ** 2 / a ** 2 + np.cos(phi) ** 2 / b ** 2
         return aa, bb, cc, h, k
 
-    def _generate_analyser_segments(self):
+    def _generate_analyser_segments(self, instrument: InstrumentContext):
         # generates the analyser with a finite segment size
-
-        def unit_vector(vector):
-            return vector / np.linalg.norm(vector)
 
         point_now = self.start_point
         analyser_x = [self.start_point[0]]
@@ -77,7 +77,7 @@ class GeometryContext(object):
             vector_sa = points_to_vector(point1=self.sample_point, point2=point_now)
             vector_af = points_to_vector(point1=point_now, point2=self.focus_point)
             vector_tangential = vector_bisector(vector_sa, vector_af)
-            segment_analyser = unit_vector(vector_tangential) * 1e-2  # the size of one segment is 1cm2
+            segment_analyser = unit_vector(vector_tangential) * instrument.analyser_segment
             point_now += segment_analyser  # update the next point
             analyser_x.append(point_now[0])
             analyser_y.append(point_now[1])

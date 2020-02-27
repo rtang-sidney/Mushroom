@@ -58,9 +58,10 @@ def get_uncertainty_theta(geo_ctx: GeometryContext, instrument: InstrumentContex
     # sa: sample-analyser; af: analyser-focus
     distance_sa = points_distance(point1=geo_ctx.sample_point, point2=analyser_point)
     distance_af = points_distance(point1=analyser_point, point2=geo_ctx.focus_point)
-    uncertainty_azimuthal_incoming = (instrument.analyser_segment + instrument.sample_diameter) / distance_sa
-    uncertainty_azimuthal_outgoing = (instrument.analyser_segment + geo_ctx.focus_size) / distance_af
-    return max(uncertainty_azimuthal_incoming, uncertainty_azimuthal_outgoing)
+    uncertainty_azimuthal_sa = 2.0 * np.arctan(
+        (instrument.analyser_segment + instrument.sample_diameter) / (2.0 * distance_sa))
+    uncertainty_azimuthal_af = 2.0 * np.arctan((instrument.analyser_segment + geo_ctx.focus_size) / (2.0 * distance_af))
+    return min(uncertainty_azimuthal_sa, uncertainty_azimuthal_af)
 
 
 def get_relative_uncertainty_energy(geo_ctx: GeometryContext, instrument: InstrumentContext, analyser_point,
@@ -403,6 +404,7 @@ def plot_resolution_comparison(all_qxy, all_dqxy, all_delta_qxy_rob, all_qz, all
 
 
 def plot_resolution_polarangles(geo_ctx: GeometryContext, polar_angles, all_dqx_m, all_dqy_m, all_dqz_m, all_kf):
+    plt.rcParams.update({'font.size': 12})
     polar_angles = np.rad2deg(polar_angles)
 
     def forward(x):
@@ -418,7 +420,7 @@ def plot_resolution_polarangles(geo_ctx: GeometryContext, polar_angles, all_dqx_
     ax.plot(polar_angles, all_dqx_m * 1e-10, color="blue")
     ax.plot(polar_angles, all_dqy_m * 1e-10, color="red")
     ax.plot(polar_angles, all_dqz_m * 1e-10, color="gold")
-    ax.set_xlabel(r"Polar angle $\phi$ (degree)")
+    ax.set_xlabel(r"Polar angle $\varphi$ (degree)")
     ax.set_ylabel(r"$\Delta k_f$ (angstrom$^{-1}$)")
     ax.grid()
     ax.legend(("x: horizontal", "y: vertical", r"z: along $k_f$"))
@@ -427,10 +429,11 @@ def plot_resolution_polarangles(geo_ctx: GeometryContext, polar_angles, all_dqx_
 
     secax = ax.secondary_xaxis('top', functions=(forward, inverse))
     secax.set_xlabel(r' Outgoing wavenumber $k_f$ (angstrom$^{-1}$)')
-    secax.tick_params(axis="x", direction="in")
-    # plt.title('z')
+    secax.tick_params(axis="x", direction="in", labelsize=10)
+    plt.title('Q-resolution of the secondary spectrometer')
     filename = "Resolution_PolarAngles.pdf"
     plt.savefig(filename, bbox_inches='tight')
+    plt.savefig(filename.replace('pdf', 'png'), bbox_inches='tight')
     print("{:s} plotted.".format(filename))
 
 

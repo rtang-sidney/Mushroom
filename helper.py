@@ -5,14 +5,15 @@ import numpy as np
 class InstrumentContext(object):
     def __init__(self):
         self.moasic_pg002 = np.deg2rad(0.4)  # radian, PG crystal mosaic
-        self.moasic_analyser = np.deg2rad(0.8)  # radian, analyser mosaic
+        self.moasic_analyser = np.deg2rad(0.4)  # radian, analyser mosaic
         self.deltad_d = 6e-4  # relative uncertainty of the lattice distance, given in [paper2]
         self.lattice_distance_pg002 = 3.35e-10  # m, lattice distance d of a PG crystal
         self.analyser_segment = 1e-2  # m, the size of an analyser segment in 1D
-        self.distance_ms = 1.0  # m, monochromator-sample distance
+        self.distance_ms = 1.5  # m, monochromator-sample distance
         self.divergence_initial = np.deg2rad(1.6)  # initial divergence directly from the neutron guide
         self.sample_diameter = 1e-2  # m
-        self.sample_height = 5e-2  # m
+        self.sample_height = 1e-2  # m
+        self.detector_resolution = 1e-2  # m, the positional resolution of the position-sensitive detectors
 
 
 MASS_NEUTRON = 1.67492749804e-27  # kg

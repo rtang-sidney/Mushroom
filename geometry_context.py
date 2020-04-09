@@ -8,7 +8,7 @@ class GeometryContext(object):
     def __init__(self, side="same"):
         self.sample_point = (0.0, 0.0)  # m
 
-        self.focus_size = 4e-2  # m
+        self.focus_size = 1e-2  # m
 
         self.ellipse_number = 100  # number of points to form the ideal ellipse
 
@@ -20,31 +20,37 @@ class GeometryContext(object):
         self.start_point = [self.start_distance * np.cos(self.angle_plus),
                             self.start_distance * np.sin(self.angle_plus)]
 
+        # self.detector_line1 = [0.0, 1.0, -1.6]  # [0, 1, v]: v -> vertical position (m) of the horizontal bank
+        # self.detector_line2 = [1.0, 0.0, 0.4]  # [1, 0, h]: h -> horizontal position (m) of the vertical bank
+        self.detector_line1 = [0.0, 1.0, -1.0]  # [0, 1, v]: v -> vertical position (m) of the horizontal bank
+        self.detector_line2 = [1.0, 0.0, 0.6]  # [1, 0, h]: h -> horizontal position (m) of the vertical bank
+        detector_suffix = '_{:2.1f}_{:2.1f}'.format(abs(self.detector_line2[2]), abs(self.detector_line1[2]))
+
         if side == "same":
             self.focus_point = (0.9, -0.4)  # m
-            self.filename_geometry = 'Geometry_SameSide2.pdf'
-            self.filename_horizontal = 'QResolution_Horizontal_SameSide.pdf'
-            self.filename_vertical = 'QResolution_Vertical_SameSide.pdf'
+            side_suffix = '_SameSide'
+            # self.focus_point = (0.85, -0.85)
         elif side == "opposite":
             self.focus_point = (0.15, -0.4)  # m
-            self.filename_geometry = 'Geometry_OppositeSide.pdf'
-            self.filename_horizontal = 'QResolution_Horizontal_OppositeSide.pdf'
-            self.filename_vertical = 'QResolution_Vertical_OppositeSide.pdf'
+            side_suffix = 'OppositeSide'
         else:
             raise RuntimeError("Given information invalid".format(side))
+        self.filename_geometry = 'Geometry' + side_suffix + detector_suffix
+        self.filename_horizontal = 'QResolution_Horizontal' + side_suffix + detector_suffix
+        self.filename_vertical = 'QResolution_Vertical' + side_suffix + detector_suffix
+        self.filename_polarangle = 'Resolution_PolarAngles' + detector_suffix
 
         self.semi_major = (points_distance(self.sample_point, self.start_point) + points_distance(
             self.focus_point, self.start_point)) / 2.0
 
         self.analyser_segment_size = 1e-2  # m
         instrumentctx = InstrumentContext()
-        self.analyser_points = self._generate_analyser_segments(instrument=instrumentctx)
+        points_x, points_y, orientations_x, orientations_y = self._generate_analyser_segments(instrument=instrumentctx)
+        self.analyser_points = (points_x, points_y)
+        self.analyser_orientations = (orientations_x, orientations_y)
 
         # if the analyser is generated as a part of an ideal ellipse:
         self.analyser_ellipse_points = self._generate_analyser_ellipse()
-
-        self.detector_line1 = [0.0, 1.0, -0.9]  # [0, 1, v]: v -> vertical position (m) of the horizontal bank
-        self.detector_line2 = [1.0, 0.0, 0.7]  # [1, 0, h]: h -> horizontal position (m) of the vertical bank
         self.detector_points = self._detector_from_analyser()
 
     def _ellipse_points_to_parameters(self):
@@ -66,22 +72,38 @@ class GeometryContext(object):
         cc = np.sin(phi) ** 2 / a ** 2 + np.cos(phi) ** 2 / b ** 2
         return aa, bb, cc, h, k
 
+    def _analyser_segment_orientation(self, analyser_point):
+        """
+        gives the unit vector denoting the orientation of an analyser segment at a given point
+        :param analyser_point: a 2-D list or numpy array
+        :return: a unit vector as a 2-D list
+        """
+        vector_sa = points_to_vector(point1=self.sample_point, point2=analyser_point)
+        vector_af = points_to_vector(point1=analyser_point, point2=self.focus_point)
+        vector_tangential = vector_bisector(vector_sa, vector_af)
+        return unit_vector(vector_tangential)
+
     def _generate_analyser_segments(self, instrument: InstrumentContext):
         # generates the analyser with a finite segment size
 
         point_now = self.start_point
         analyser_x = [self.start_point[0]]
         analyser_y = [self.start_point[1]]
+        orientation_now = self._analyser_segment_orientation(point_now)
+        analyser_orientation_x = [orientation_now[0]]
+        analyser_orientation_y = [orientation_now[1]]
+
         while self.angle_minus - np.deg2rad(0.1) < np.arctan(
                 point_now[1] / point_now[0]) < self.angle_plus + np.deg2rad(0.1):
-            vector_sa = points_to_vector(point1=self.sample_point, point2=point_now)
-            vector_af = points_to_vector(point1=point_now, point2=self.focus_point)
-            vector_tangential = vector_bisector(vector_sa, vector_af)
-            segment_analyser = unit_vector(vector_tangential) * instrument.analyser_segment
+            segment_analyser = orientation_now * instrument.analyser_segment
             point_now += segment_analyser  # update the next point
+            orientation_now = self._analyser_segment_orientation(point_now)
             analyser_x.append(point_now[0])
             analyser_y.append(point_now[1])
-        return np.array(analyser_x), np.array(analyser_y)
+            analyser_orientation_x.append(orientation_now[0])
+            analyser_orientation_y.append(orientation_now[1])
+        return np.array(analyser_x), np.array(analyser_y), np.array(analyser_orientation_x), np.array(
+            analyser_orientation_y)
 
     def _intersect_on_ellipse(self, m):
         # gives the intersect of a line y = mx, with the ellipse described by the parameters (aa, bb, cc, h, k)
@@ -122,7 +144,7 @@ class GeometryContext(object):
     def _detector_from_analyser(self):
         detector_x = []
         detector_y = []
-        analyser_x, analyser_y = self.analyser_points
+        analyser_x, analyser_y = self.analyser_points[:2]
         for i in range(analyser_x.shape[0]):
             line_af = points_to_line(self.focus_point, [analyser_x[i], analyser_y[i]])
             detector_point = lines_intersect(line1=line_af, line2=self.detector_line1)

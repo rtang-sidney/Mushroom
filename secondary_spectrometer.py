@@ -85,12 +85,12 @@ def vertical_divergence_analyser(geo_ctx: GeometryContext, instrument: Instrumen
     analyser_outgoing_projection = vector_project_a2b(segment_analyser, vector_af)
     analyser_outgoing_rejection = segment_analyser - analyser_outgoing_projection
 
-    divergence_in = np.arctan((instrument.sample_height * abs(np.sin(
+    divergence_in = 2.0 * np.arctan((instrument.sample_height * abs(np.sin(
         points_to_slope_radian(point1=geo_ctx.sample_point, point2=analyser_point))) + np.linalg.norm(
-        analyser_incoming_rejection)) / np.linalg.norm(vector_sa))
-    divergence_out = np.arctan((geo_ctx.focus_size * abs(np.sin(
+        analyser_incoming_rejection)) / (2.0 * np.linalg.norm(vector_sa)))
+    divergence_out = 2.0 * np.arctan((geo_ctx.focus_size * abs(np.sin(
         points_to_slope_radian(point1=analyser_point, point2=geo_ctx.focus_point))) + np.linalg.norm(
-        analyser_outgoing_rejection)) / np.linalg.norm(vector_af))
+        analyser_outgoing_rejection)) / (2.0 * np.linalg.norm(vector_af)))
     # divergence_in = instrument.sample_size / distance_sa
     # divergence_out = geo_ctx.focus_size / distance_af
     return divergence_in, divergence_out
@@ -133,12 +133,16 @@ def get_resolution_qxy(geo_ctx: GeometryContext, instrument: InstrumentContext, 
 
 
 def get_dq_mcstas_coordinate(geo_ctx: GeometryContext, instrument: InstrumentContext, kf, analyser_point_now,
-                             analyser_point_nearest):
+                             analyser_point_nearest, index):
+    factor_polar, factor_azimuth = spread_factor_detector(geo_ctx=geo_ctx, instrument=instrument,
+                                                          analyser_now=analyser_point_now,
+                                                          analyser_nearest=analyser_point_nearest, index_now=index)
     dkf = get_uncertainty_kf(geo_ctx, instrument=instrument, analyser_point_now=analyser_point_now,
-                             analyser_point_nearest=analyser_point_nearest, kf=kf)
-    dphi = get_uncertainty_phi(geo_ctx, instrument=instrument, analyser_point=analyser_point_now)
+                             analyser_point_nearest=analyser_point_nearest, kf=kf) * factor_polar
+    dphi = get_uncertainty_phi(geo_ctx, instrument=instrument, analyser_point=analyser_point_now) * factor_polar
     # delta_phi = np.sqrt(np.sum(np.square([divergence_analyser_point(geo_ctx, analyser_point=analyser_point)])))
-    dtheta = get_uncertainty_theta(geo_ctx=geo_ctx, instrument=instrument, analyser_point=analyser_point_now)
+    dtheta = get_uncertainty_theta(geo_ctx=geo_ctx, instrument=instrument,
+                                   analyser_point=analyser_point_now) * factor_azimuth
 
     dqx = kf * np.tan(dtheta)
     dqy = kf * np.tan(dphi)
@@ -294,7 +298,8 @@ def plot_whole_geometry(geo_ctx: GeometryContext, instrument: InstrumentContext)
     plt.xlim(-1.8, 1.8)
 
     plt.tight_layout()
-    plt.savefig(geo_ctx.filename_geometry, bbox_inches='tight')
+    plt.savefig(geo_ctx.filename_geometry + '.pdf', bbox_inches='tight')
+    plt.savefig(geo_ctx.filename_geometry + '.png', bbox_inches='tight')
     plt.close(1)
     print("{:s} plotted.".format(geo_ctx.filename_geometry))
 
@@ -402,6 +407,8 @@ def plot_resolution_comparison(all_qxy, all_dqxy, all_delta_qxy_rob, all_qz, all
     plt.savefig("Comparison_Vertical.pdf", bbox_inches='tight')
     plt.close(5)
 
+def write_mcstas(geo_ctx: GeometryContext):
+    pass
 
 def plot_resolution_polarangles(geo_ctx: GeometryContext, polar_angles, all_dqx_m, all_dqy_m, all_dqz_m, all_kf):
     plt.rcParams.update({'font.size': 12})
@@ -427,13 +434,21 @@ def plot_resolution_polarangles(geo_ctx: GeometryContext, polar_angles, all_dqx_
     ax.tick_params(axis="x", direction="in")
     ax.tick_params(axis="y", direction="in")
 
+    ax2 = ax.twinx()  # instantiate a second axes that shares the same x-axis
+    colour_ax2 = "green"
+    ax2.plot(polar_angles, all_dqz_m / all_kf * 1e2, '1', color=colour_ax2)
+    ax2.tick_params(axis="y", direction="in")
+    ax2.set_ylabel(r"$\dfrac{\Delta k_f}{k_f}$ * 100%", color=colour_ax2)
+    ax2.tick_params(axis='y', labelcolor=colour_ax2)
+
     secax = ax.secondary_xaxis('top', functions=(forward, inverse))
     secax.set_xlabel(r' Outgoing wavenumber $k_f$ (angstrom$^{-1}$)')
     secax.tick_params(axis="x", direction="in", labelsize=10)
-    plt.title('Q-resolution of the secondary spectrometer')
-    filename = "Resolution_PolarAngles.pdf"
-    plt.savefig(filename, bbox_inches='tight')
-    plt.savefig(filename.replace('pdf', 'png'), bbox_inches='tight')
+
+    ax.set_title('Q-resolution of the secondary spectrometer')
+    filename = geo_ctx.filename_polarangle
+    plt.savefig(filename + '.pdf', bbox_inches='tight')
+    plt.savefig(filename + '.png', bbox_inches='tight')
     print("{:s} plotted.".format(filename))
 
 
@@ -454,9 +469,10 @@ def resolution_calculation(geo_ctx: GeometryContext, instrument: InstrumentConte
         # qxy and qz have different dimensions!
         point_now = [geo_ctx.analyser_points[0][i], geo_ctx.analyser_points[1][i]]
         if i == 0:
-            point_nearest = [geo_ctx.analyser_points[0][1], geo_ctx.analyser_points[1][1]]
+            j = 1
         else:
-            point_nearest = [geo_ctx.analyser_points[0][i - 1], geo_ctx.analyser_points[1][i - 1]]
+            j = i - 1
+        point_nearest = [geo_ctx.analyser_points[0][j], geo_ctx.analyser_points[1][j]]
         kf = wavenumber_bragg(geo_ctx=geo_ctx, instrument=instrument, analyser_point=point_now)
         qz = get_qz(kf=kf, polar_angle=phi)
         delta_qz = get_resolution_qz(geo_ctx=geo_ctx, instrument=instrument, analyser_point_now=point_now,
@@ -471,7 +487,8 @@ def resolution_calculation(geo_ctx: GeometryContext, instrument: InstrumentConte
             all_dqxy.append(delta_qxy)
         all_dqx_m[i], all_dqy_m[i], all_dqz_m[i] = get_dq_mcstas_coordinate(geo_ctx=geometryctx, instrument=instrument,
                                                                             analyser_point_now=point_now,
-                                                                            analyser_point_nearest=point_nearest, kf=kf)
+                                                                            analyser_point_nearest=point_nearest, kf=kf,
+                                                                            index=i)
         # print("kf and dkf", kf * 1e-10, all_dqz_m[i] * 1e-10)
 
         all_qz.append(qz)
@@ -482,6 +499,45 @@ def resolution_calculation(geo_ctx: GeometryContext, instrument: InstrumentConte
     all_dqxy = np.array(all_dqxy)
     all_dqz = np.array(all_dqz)
     return all_qxy, all_qz, all_dqxy, all_dqz, all_dqx_m, all_dqy_m, all_dqz_m
+
+
+def check_detector_spread(geo_ctx: GeometryContext, instrument: InstrumentContext):
+    keep_index = []
+    delete_index = []
+    spread_factor = np.empty_like(geo_ctx.detector_points[0])
+    i = 0
+    while i < geo_ctx.detector_points[0].shape[0] - 1:
+        keep_index.append(i)
+        point_now = [geo_ctx.detector_points[0][i], geo_ctx.detector_points[1][i]]
+        j = i + 1
+        while j < geo_ctx.detector_points[0].shape[0]:
+            point_next = [geo_ctx.detector_points[0][j], geo_ctx.detector_points[1][j]]
+            if points_distance(point_now, point_next) < instrument.detector_resolution:
+                delete_index.append(j)
+                # print(j, points_distance(point_now, point_next))
+                j += 1
+            else:
+                break
+        i = j
+    print(len(keep_index), keep_index)
+    print(len(delete_index), delete_index)
+
+
+def spread_factor_detector(geo_ctx: GeometryContext, instrument: InstrumentContext, analyser_now, analyser_nearest,
+                           index_now):
+    detector_now = [geo_ctx.detector_points[0][index_now], geo_ctx.detector_points[1][index_now]]
+    if index_now == 0:
+        index_nearest = 1
+    else:
+        index_nearest = index_now - 1
+    detector_next = [geo_ctx.detector_points[0][index_nearest], geo_ctx.detector_points[1][index_nearest]]
+    spread_factor_polar = max(1, instrument.detector_resolution / points_distance(detector_now, detector_next))
+
+    detector_spread_azimuth = instrument.analyser_segment * points_distance(detector_now,
+                                                                            geo_ctx.focus_point) / points_distance(
+        analyser_now, geo_ctx.focus_point)
+    spread_factor_azimuth = max(1, instrument.detector_resolution / detector_spread_azimuth)
+    return spread_factor_polar, spread_factor_azimuth
 
 
 geometryctx = GeometryContext(side="same")
@@ -524,3 +580,5 @@ plot_resolution_polarangles(geo_ctx=geometryctx, polar_angles=polar_angles, all_
 # plot_resolution_comparison(all_qxy=all_qxy, all_dqxy=all_dqxy, all_delta_qxy_rob=all_delta_qxy_rob, all_qz=all_qz,
 #                            all_dqz=all_dqz,
 #                            all_delta_qz_rob=all_delta_qz_rob)
+
+# check_detector_spread(geo_ctx=geometryctx, instrument=instrumentctx)

@@ -3,6 +3,9 @@ import numpy as np
 from helper import wavenumber_to_2theta_bragg, InstrumentContext, wavelength_to_wavenumber, angle_isoceles
 
 ZERO_TOL = 1e-6
+ENERGY_SELECTION_MONOCHROMATOR = "Monochromator"
+ENERGY_SELECTION_VELOCITY_SELECTOR = "VelocitySelector"
+FILENAME_PREFIX = "Resolution_Primary_"
 FILENAME_MONOCHROMATOR = "Resolution_Primary_Monochromator.pdf"
 FILENAME_VELOCITY_SELECTOR = "Resolution_Primary_VelocitySelector.pdf"
 AXIS_ARZIMUTHAL = "x"
@@ -13,6 +16,13 @@ AXIS_POLAR = "y"
 [Paper2]: Keller2002 https://doi.org/10.1007/s003390101082
 
 """
+
+
+def get_filename(energy_selection_type):
+    if isinstance(energy_selection_type, str):
+        return FILENAME_PREFIX + energy_selection_type + ".pdf"
+    else:
+        raise RuntimeError("Invalid type of the energy selection variable given.")
 
 
 def get_resolution_monochromator(instrument: InstrumentContext, ki):
@@ -83,29 +93,24 @@ def get_resolution_components(ki, dki, dtheta, dphi):
     return dqx, dqy, dqz
 
 
-def plot_resolution(ki, dqx, dqy, dqz, filename):
+def plot_resolution(ki, dqx, dqy, dqz, energy_selection):
+    filename = get_filename(energy_selection_type=energy_selection)
     plt.rcParams.update({'font.size': 12})
     fig, ax = plt.subplots(constrained_layout=True)
-    if filename == FILENAME_MONOCHROMATOR:
-        ax.plot(ki * 1e-10, dqx * 1e-10, color="blue")
-        ax.plot(ki * 1e-10, dqy * 1e-10, color="red")
-        ax.plot(ki * 1e-10, dqz * 1e-10, color="gold")
-    elif filename == FILENAME_VELOCITY_SELECTOR:
-        ax.plot(ki * 1e-10, dqx * 1e-10, '1', color="blue")
-        ax.plot(ki * 1e-10, dqy * 1e-10, '2', color="red")
-        ax.plot(ki * 1e-10, dqz * 1e-10, '3', color="gold")
-    else:
-        raise RuntimeError("Invalid filename given.")
+    ax.plot(ki * 1e-10, dqx * 1e-10, color="blue")
+    ax.plot(ki * 1e-10, dqy * 1e-10, color="red")
+    ax.plot(ki * 1e-10, dqz * 1e-10, color="gold")
+
     ax.tick_params(axis="x", direction="in")
     ax.tick_params(axis="y", direction="in")
     ax.legend(("x: horizontal", "y: vertical", r"z: along $k_f$"))
     ax.set_xlabel(r"Incoming wavenumber $k_i$ (angstrom$^{-1}$)")
     ax.set_ylabel(r"$\Delta k_i$ (angstrom$^{-1}$)")
     ax.grid()
-    ax.set_title("Q-resolution of the primary spectrometer")
+    ax.set_title("Q-resolution of the primary spectrometer: {}".format(energy_selection))
     ax2 = ax.twinx()  # instantiate a second axes that shares the same x-axis
     colour_ax2 = "green"
-    ax2.plot(ki * 1e-10, dqz / ki * 1e2, color=colour_ax2)
+    ax2.plot(ki * 1e-10, dqz / ki * 1e2, '1', color=colour_ax2)
     ax2.tick_params(axis="y", direction="in")
     ax2.set_ylabel(r"$\dfrac{\Delta k_i}{k_i}$ * 100%", color=colour_ax2)
     ax2.tick_params(axis='y', labelcolor=colour_ax2)
@@ -115,12 +120,11 @@ def plot_resolution(ki, dqx, dqy, dqz, filename):
     print("{:s} plotted.".format(filename))
 
 
-def get_resolution_velocityselector(ki):
+def get_resolution_velocityselector(instrument: InstrumentContext, ki):
     dk_k = 0.1
-    delta_angle = np.deg2rad(1.0)
     dki = ki * dk_k
-    dtheta = delta_angle
-    dphi = delta_angle
+    dtheta = np.deg2rad(1.0)
+    dphi = instrument.divergence_initial
     return dki, dtheta, dphi
 
 
@@ -131,10 +135,10 @@ wavenumber_incoming = wavelength_to_wavenumber(wavelength_incoming)
 
 dki, dtheta, dphi = get_resolution_monochromator(instrument=instrumentctx, ki=wavenumber_incoming)
 dqx, dqy, dqz = get_resolution_components(ki=wavenumber_incoming, dki=dki, dtheta=dtheta, dphi=dphi)
-filename = FILENAME_MONOCHROMATOR
-plot_resolution(ki=wavenumber_incoming, dqx=dqx, dqy=dqy, dqz=dqz, filename=filename)
+energy_selection = ENERGY_SELECTION_MONOCHROMATOR
+plot_resolution(ki=wavenumber_incoming, dqx=dqx, dqy=dqy, dqz=dqz, energy_selection=energy_selection)
 
-dki, dtheta, dphi = get_resolution_velocityselector(ki=wavenumber_incoming)
+dki, dtheta, dphi = get_resolution_velocityselector(instrument=instrumentctx, ki=wavenumber_incoming)
 dqx, dqy, dqz = get_resolution_components(ki=wavenumber_incoming, dki=dki, dtheta=dtheta, dphi=dphi)
-filename = FILENAME_VELOCITY_SELECTOR
-plot_resolution(ki=wavenumber_incoming, dqx=dqx, dqy=dqy, dqz=dqz, filename=filename)
+energy_selection = ENERGY_SELECTION_VELOCITY_SELECTOR
+plot_resolution(ki=wavenumber_incoming, dqx=dqx, dqy=dqy, dqz=dqz, energy_selection=energy_selection)

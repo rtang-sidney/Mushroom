@@ -8,7 +8,7 @@ ENERGY_SELECTION_VELOCITY_SELECTOR = "VelocitySelector"
 FILENAME_PREFIX = "Resolution_Primary_"
 FILENAME_MONOCHROMATOR = "Resolution_Primary_Monochromator.pdf"
 FILENAME_VELOCITY_SELECTOR = "Resolution_Primary_VelocitySelector.pdf"
-AXIS_ARZIMUTHAL = "x"
+AXIS_AZIMUTHAL = "x"
 AXIS_POLAR = "y"
 
 """
@@ -37,7 +37,7 @@ def get_resolution_monochromator(instrument: InstrumentContext, ki):
     def divergence_mono(instrument: InstrumentContext, axis):
         # distance_ms: monochromator-sample distance
         divergence_in = instrument.divergence_initial
-        if axis == AXIS_ARZIMUTHAL:
+        if axis == AXIS_AZIMUTHAL:
             divergence_out = angle_triangle(a=instrument.distance_ms, c=instrument.sample_diameter)
         elif axis == AXIS_POLAR:
             divergence_out = angle_triangle(a=instrument.distance_ms, c=instrument.sample_height)
@@ -58,7 +58,7 @@ def get_resolution_monochromator(instrument: InstrumentContext, ki):
 
     def get_uncertainty_ki(instrument: InstrumentContext, ki):
         # gives the deviation of the wave-number by means of the Bragg's law
-        dtheta_mono = angular_spread_monochromator(instrument=instrument, axis=AXIS_ARZIMUTHAL)
+        dtheta_mono = angular_spread_monochromator(instrument=instrument, axis=AXIS_AZIMUTHAL)
         twotheta_mono = monochromator_twotheta(instrument=instrument, ki=ki)
         dki_bragg = ki * np.sqrt(
             np.sum(np.square([instrument.deltad_d, dtheta_mono / np.tan(twotheta_mono / 2.0)])))
@@ -69,11 +69,11 @@ def get_resolution_monochromator(instrument: InstrumentContext, ki):
         # angles to be taken into consideration in this direction
         return angle_triangle(instrument.distance_ms, instrument.sample_height)
 
-    def get_spread_arzimuthal(instrument: InstrumentContext):
+    def get_spread_azimuthal(instrument: InstrumentContext):
         return min(np.deg2rad(1.6), angular_spread_monochromator(instrument=instrument, axis=AXIS_POLAR))
 
     dki = get_uncertainty_ki(instrument=instrument, ki=ki)
-    dtheta = get_spread_arzimuthal(instrument=instrument)
+    dtheta = get_spread_azimuthal(instrument=instrument)
     dphi = get_spread_polar(instrument=instrument)
     return dki, dtheta, dphi
 

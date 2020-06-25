@@ -1,7 +1,7 @@
 import numpy as np
 
 from helper import points_distance, vector_bisector, ZERO_TOL, points_to_line, points_to_vector, lines_intersect, \
-    unit_vector, InstrumentContext
+    unit_vector, InstrumentContext, angle_vectors
 
 
 class GeometryContext(object):
@@ -16,6 +16,7 @@ class GeometryContext(object):
             50.)  # radian, the slope of the line from the sample to the upmost point on the analyser
         self.angle_minus = np.deg2rad(
             -10.)  # radian, the slope of the line from the sample to the downmost point on the analyser
+        self.angle_middle = (self.angle_plus + self.angle_minus) / 2.0
         self.start_distance = 0.8  # m, the distance from the sample to the upmost point of the analyser
         self.start_point = [self.start_distance * np.cos(self.angle_plus),
                             self.start_distance * np.sin(self.angle_plus)]
@@ -45,13 +46,35 @@ class GeometryContext(object):
 
         self.analyser_segment_size = 1e-2  # m
         instrumentctx = InstrumentContext()
-        points_x, points_y, orientations_x, orientations_y = self._generate_analyser_segments(instrument=instrumentctx)
+        points_x, points_y, self.mcstas_rotation_radian = self._generate_analyser_segments(instrument=instrumentctx)
         self.analyser_points = (points_x, points_y)
-        self.analyser_orientations = (orientations_x, orientations_y)
+
+        azimuthal_start = np.deg2rad(5.)  # radian
+        azimuthal_stop = np.deg2rad(170.)  # radian
+        angle_one_segment = np.arcsin(instrumentctx.analyser_segment / self.start_distance)
+        number_points = int(round(abs(azimuthal_start - azimuthal_stop / angle_one_segment)))
+        print(azimuthal_start, azimuthal_stop, number_points)
+        self.azimuthal_angles = np.linspace(azimuthal_start, azimuthal_stop, num=number_points)
 
         # if the analyser is generated as a part of an ideal ellipse:
         self.analyser_ellipse_points = self._generate_analyser_ellipse()
         self.detector_points = self._detector_from_analyser()
+
+        self.mcstas_filename = 'Analyser_McStas.dat'
+        self.arm_sa_name_prefix = "arm_sa_an"
+        self.arm_sa_reference = "arm_sample_orientation"
+        self.component_name_prefix = "graphite_analyser"
+        self.component_type = "Monochromator_flat"
+        self.parameter_width_z = "zwidth"
+        self.parameter_height_y = "yheight"
+        self.parameter_mosaic_horizontal = "mosaich"
+        self.parameter_mosaic_vertical = "mosaicv"
+        self.parameter_lattice_distance = "DM"
+        self.parameter_radius_horizontal_focusing = "RH"
+        self.parameter_number_slabs_horizontal = "NH"
+        self.parameter_angle_phi = "phi"
+        self.component_reference = "analyser_arm"
+        self.group_name = "analyser"
 
     def _ellipse_points_to_parameters(self):
         """
@@ -81,7 +104,11 @@ class GeometryContext(object):
         vector_sa = points_to_vector(point1=self.sample_point, point2=analyser_point)
         vector_af = points_to_vector(point1=analyser_point, point2=self.focus_point)
         vector_tangential = vector_bisector(vector_sa, vector_af)
-        return unit_vector(vector_tangential)
+        if abs(vector_tangential[0]) < ZERO_TOL:
+            slope_angle = np.pi / 2.0
+        else:
+            slope_angle = np.arctan(vector_tangential[1] / vector_tangential[0])
+        return unit_vector(vector_tangential), slope_angle
 
     def _generate_analyser_segments(self, instrument: InstrumentContext):
         # generates the analyser with a finite segment size
@@ -89,21 +116,18 @@ class GeometryContext(object):
         point_now = self.start_point
         analyser_x = [self.start_point[0]]
         analyser_y = [self.start_point[1]]
-        orientation_now = self._analyser_segment_orientation(point_now)
-        analyser_orientation_x = [orientation_now[0]]
-        analyser_orientation_y = [orientation_now[1]]
+        orientation_now, mcstas_rotation_now = self._analyser_segment_orientation(point_now)
+        mcstas_rotation_radian = [mcstas_rotation_now]
 
         while self.angle_minus - np.deg2rad(0.1) < np.arctan(
                 point_now[1] / point_now[0]) < self.angle_plus + np.deg2rad(0.1):
             segment_analyser = orientation_now * instrument.analyser_segment
             point_now += segment_analyser  # update the next point
-            orientation_now = self._analyser_segment_orientation(point_now)
+            orientation_now, mcstas_rotation_now = self._analyser_segment_orientation(point_now)
             analyser_x.append(point_now[0])
             analyser_y.append(point_now[1])
-            analyser_orientation_x.append(orientation_now[0])
-            analyser_orientation_y.append(orientation_now[1])
-        return np.array(analyser_x), np.array(analyser_y), np.array(analyser_orientation_x), np.array(
-            analyser_orientation_y)
+            mcstas_rotation_radian.append(mcstas_rotation_now)
+        return np.array(analyser_x), np.array(analyser_y), np.array(mcstas_rotation_radian)
 
     def _intersect_on_ellipse(self, m):
         # gives the intersect of a line y = mx, with the ellipse described by the parameters (aa, bb, cc, h, k)

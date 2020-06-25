@@ -422,56 +422,44 @@ def write_mcstas(geo_ctx: GeometryContext, instrument: InstrumentContext):
     value_position_y = geo_ctx.analyser_points[1]
     value_position_z = geo_ctx.analyser_points[0]
     value_rotaion_x = -np.rad2deg(geo_ctx.mcstas_rotation_radian)
+
     # for j, azimuthal_angle in enumerate(geo_ctx.azimuthal_angles):
-    # arm_sa_name = "{}{}".format(geo_ctx.arm_sa_name_prefix, j)
-    # string_arm_sa1 = "COMPONENT {} = Arm()\n".format(arm_sa_name)
-    # string_arm_sa2 = 'AT (0, 0, 0) RELATIVE {}\n'.format(geo_ctx.arm_sa_reference)
-    # string_arm_sa3 = 'ROTATED (0, {}, 0) RELATIVE {}\n\n'.format(np.rad2deg(azimuthal_angle),
-    #                                                              geo_ctx.arm_sa_reference)
-    # string_arm_sa = string_arm_sa1 + string_arm_sa2 + string_arm_sa3
-    # f.write(string_arm_sa)
-    # for i in range(geo_ctx.analyser_points[0].shape[0]):
-    #     # string1 = 'COMPONENT {}{} = {}({} = {}, {} = {}, {} = {}, {} = {}, {} = {}, {} = {}, {} = {}, {} = {})\n'.format(
-    #     #     geo_ctx.component_name_prefix, i, geo_ctx.component_type, geo_ctx.parameter_width_z, value_width_z,
-    #     #     geo_ctx.parameter_height_y, value_height_y, geo_ctx.parameter_mosaic_horizontal, value_mosaic_horizontal,
-    #     #     geo_ctx.parameter_mosaic_vertical, value_mosaic_vertical, geo_ctx.parameter_lattice_distance,
-    #     #     value_lattice_distance, geo_ctx.parameter_radius_horizontal_focusing,
-    #     #     value_radius_horizontal_focusing, geo_ctx.parameter_angle_phi, value_angle_phi,
-    #     #     geo_ctx.parameter_number_slabs_horizontal, value_number_slabs_horizontal)
-    #     arm_name = "{}{}_{}".format(geo_ctx.component_reference, j, i)
-    #     string_ar1 = "COMPONENT {} = Arm()\n".format(arm_name)
-    #     string_ar2 = 'AT (0, {}, {}) RELATIVE {}\n'.format(value_position_y[i], value_position_z[i],
-    #                                                        arm_sa_name)
-    #     string_ar3 = 'ROTATED ({}, 0, 0) RELATIVE {}\n\n'.format(value_rotaion_x[i], arm_sa_name)
-    #     string_arm = string_ar1 + string_ar2 + string_ar3
-    #     string_an1 = 'COMPONENT {}{}_{} = {}({} = {}, {} = {}, {} = {}, {} = {}, {} = {})\n'.format(
-    #         geo_ctx.component_name_prefix, j, i, geo_ctx.component_type, geo_ctx.parameter_width_z, value_width_z,
-    #         geo_ctx.parameter_height_y, value_height_y, geo_ctx.parameter_mosaic_horizontal,
-    #         value_mosaic_horizontal,
-    #         geo_ctx.parameter_mosaic_vertical, value_mosaic_vertical, geo_ctx.parameter_lattice_distance,
-    #         value_lattice_distance)
-    #     string_an2 = 'AT (0, 0, 0) RELATIVE {}\n'.format(arm_name)
-    #     string_an3 = 'ROTATED (0, 0, -90) RELATIVE {}\n'.format(arm_name)
-    #     # string_an3 = 'ROTATED (90, 90, 0) RELATIVE {}\n'.format(geo_ctx.component_reference)
-    #     string_an4 = 'GROUP {}\n\n'.format(geo_ctx.group_name)
-    #     string_analyser = string_an1 + string_an2 + string_an3 + string_an4
-    # #     f.write(string_arm + string_analyser)
+    #     arm_sa_name = "{}{}".format(geo_ctx.arm_sa_name_prefix, j)
+    #     string_arm_sa1 = "COMPONENT {} = Arm()\n".format(arm_sa_name)
+    #     string_arm_sa2 = 'AT (0, 0, 0) RELATIVE {}\n'.format(geo_ctx.arm_sa_reference)
+    #     string_arm_sa3 = 'ROTATED (0, {}, 0) RELATIVE {}\n\n'.format(np.rad2deg(azimuthal_angle),
+    #                                                                  geo_ctx.arm_sa_reference)
+    #     string_arm_sa = string_arm_sa1 + string_arm_sa2 + string_arm_sa3
+    #     f.write(string_arm_sa)
+    #     for i in range(geo_ctx.analyser_points[0].shape[0]):
+    #         string_an1 = 'COMPONENT {}{}_{} = {}({} = {}, {} = {}, {} = {}, {} = {}, {} = {})\n'.format(
+    #             geo_ctx.component_name_prefix, j, i, geo_ctx.component_type, geo_ctx.parameter_width_z, value_width_z,
+    #             geo_ctx.parameter_height_y, value_height_y, geo_ctx.parameter_mosaic_horizontal,
+    #             value_mosaic_horizontal,
+    #             geo_ctx.parameter_mosaic_vertical, value_mosaic_vertical, geo_ctx.parameter_lattice_distance,
+    #             value_lattice_distance)
+    #         string_an2 = 'AT (0, {}, {}) RELATIVE {}\n'.format(value_position_y[i], value_position_z[i], arm_sa_name)
+    #         string_an3 = 'ROTATED ({}, 0, 90) RELATIVE {}\n'.format(value_rotaion_x[i], arm_sa_name)
+    #         # string_an3 = 'ROTATED (90, 90, 0) RELATIVE {}\n'.format(geo_ctx.component_reference)
+    #         string_an4 = 'GROUP {}\n\n'.format(geo_ctx.group_name)
+    #         string_analyser = string_an1 + string_an2 + string_an3 + string_an4
+    #         f.write(string_analyser)
 
     # This is the code for analyser segments at one azimuthal angle without arms
-    # for i in range(geo_ctx.analyser_points[0].shape[0]):
-    #     string_an1 = 'COMPONENT {}{} = {}({} = {}, {} = {}, {} = {}, {} = {}, {} = {})\n'.format(
-    #         geo_ctx.component_name_prefix, i, geo_ctx.component_type, geo_ctx.parameter_width_z, value_width_z,
-    #         geo_ctx.parameter_height_y, value_height_y, geo_ctx.parameter_mosaic_horizontal,
-    #         value_mosaic_horizontal,
-    #         geo_ctx.parameter_mosaic_vertical, value_mosaic_vertical, geo_ctx.parameter_lattice_distance,
-    #         value_lattice_distance)
-    #     string_an2 = 'AT (0, {}, {}) RELATIVE {}\n'.format(value_position_y[i], value_position_z[i],
-    #                                                        geo_ctx.component_reference)
-    #     string_an3 = 'ROTATED ({}, 0, 90) RELATIVE {}\n'.format(value_rotaion_x[i], geo_ctx.component_reference)
-    #     # string_an3 = 'ROTATED (90, 90, 0) RELATIVE {}\n'.format(geo_ctx.component_reference)
-    #     string_an4 = 'GROUP {}\n\n'.format(geo_ctx.group_name)
-    #     string_analyser = string_an1 + string_an2 + string_an3 + string_an4
-    #     f.write(string_analyser)
+    for i in range(geo_ctx.analyser_points[0].shape[0]):
+        string_an1 = 'COMPONENT {}{} = {}({} = {}, {} = {}, {} = {}, {} = {}, {} = {})\n'.format(
+            geo_ctx.component_name_prefix, i, geo_ctx.component_type, geo_ctx.parameter_width_z, value_width_z,
+            geo_ctx.parameter_height_y, value_height_y, geo_ctx.parameter_mosaic_horizontal,
+            value_mosaic_horizontal,
+            geo_ctx.parameter_mosaic_vertical, value_mosaic_vertical, geo_ctx.parameter_lattice_distance,
+            value_lattice_distance)
+        string_an2 = 'AT (0, {}, {}) RELATIVE {}\n'.format(value_position_y[i], value_position_z[i],
+                                                           geo_ctx.component_reference)
+        string_an3 = 'ROTATED ({}, 0, 90) RELATIVE {}\n'.format(value_rotaion_x[i], geo_ctx.component_reference)
+        # string_an3 = 'ROTATED (90, 90, 0) RELATIVE {}\n'.format(geo_ctx.component_reference)
+        string_an4 = 'GROUP {}\n\n'.format(geo_ctx.group_name)
+        string_analyser = string_an1 + string_an2 + string_an3 + string_an4
+        f.write(string_analyser)
     f.close()
     pass
 

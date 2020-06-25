@@ -1,6 +1,6 @@
 import matplotlib.pyplot as plt
 import numpy as np
-from helper import wavenumber_to_2theta_bragg, InstrumentContext, wavelength_to_wavenumber, angle_isoceles
+from helper import wavenumber_to_2theta_bragg, InstrumentContext, wavelength_to_wavenumber, angle_triangle
 
 ZERO_TOL = 1e-6
 ENERGY_SELECTION_MONOCHROMATOR = "Monochromator"
@@ -38,9 +38,9 @@ def get_resolution_monochromator(instrument: InstrumentContext, ki):
         # distance_ms: monochromator-sample distance
         divergence_in = instrument.divergence_initial
         if axis == AXIS_ARZIMUTHAL:
-            divergence_out = angle_isoceles(a=instrument.distance_ms, c=instrument.sample_diameter)
+            divergence_out = angle_triangle(a=instrument.distance_ms, c=instrument.sample_diameter)
         elif axis == AXIS_POLAR:
-            divergence_out = angle_isoceles(a=instrument.distance_ms, c=instrument.sample_height)
+            divergence_out = angle_triangle(a=instrument.distance_ms, c=instrument.sample_height)
         else:
             raise RuntimeError("Invalid axis given.")
         return divergence_in, divergence_out
@@ -67,7 +67,7 @@ def get_resolution_monochromator(instrument: InstrumentContext, ki):
     def get_spread_polar(instrument: InstrumentContext):
         # the spread of the polar angle is given simply by the divergence in both directions since there is no scattering
         # angles to be taken into consideration in this direction
-        return angle_isoceles(instrument.distance_ms, instrument.sample_height)
+        return angle_triangle(instrument.distance_ms, instrument.sample_height)
 
     def get_spread_arzimuthal(instrument: InstrumentContext):
         return min(np.deg2rad(1.6), angular_spread_monochromator(instrument=instrument, axis=AXIS_POLAR))

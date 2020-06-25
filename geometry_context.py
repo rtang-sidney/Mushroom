@@ -52,7 +52,8 @@ class GeometryContext(object):
         azimuthal_start = np.deg2rad(5.)  # radian
         azimuthal_stop = np.deg2rad(170.)  # radian
         angle_one_segment = np.arcsin(instrumentctx.analyser_segment / self.start_distance)
-        number_points = int(round(abs(azimuthal_start - azimuthal_stop / angle_one_segment)))
+        # number_points = int(round(abs(azimuthal_start - azimuthal_stop / angle_one_segment)))
+        number_points = 10
         print(azimuthal_start, azimuthal_stop, number_points)
         self.azimuthal_angles = np.linspace(azimuthal_start, azimuthal_stop, num=number_points)
 

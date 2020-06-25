@@ -39,7 +39,7 @@ def points_distance(point1, point2):
     return np.linalg.norm(point1 - point2)
 
 
-def get_angle(vector1, vector2):
+def angle_vectors(vector1, vector2):
     """
     Returns the angle between vector1 and vector2 in radians
 
@@ -137,7 +137,7 @@ def get_kf_vector(kf_norm, azimuthal, polar):
     return kf
 
 
-def angle_isoceles(a, c, b=None):
+def angle_triangle(a, c, b=None):
     if b is None:
         b = a
     return np.arccos((a ** 2 + b ** 2 - c ** 2) / (2 * a * b))
@@ -163,3 +163,10 @@ def vector_project_a2b(vector_a, vector_b):
 
 def vector_rejection(vector, vector_projection):
     return vector - vector_projection
+
+
+def deg2min(angle_in_degree):
+    if 0 < angle_in_degree < 1:
+        return 60 * angle_in_degree
+    else:
+        raise ValueError("Invalid angle given")

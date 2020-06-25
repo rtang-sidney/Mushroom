@@ -2,8 +2,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from geometry_context import GeometryContext
-from helper import wavelength_to_eV, points_distance, get_angle, vector_bisector, InstrumentContext, points_to_vector, \
-    get_kf_vector, points_to_slope_radian, unit_vector, vector_project_a2b
+from helper import wavelength_to_eV, points_distance, angle_vectors, vector_bisector, InstrumentContext, \
+    points_to_vector, \
+    get_kf_vector, points_to_slope_radian, unit_vector, vector_project_a2b, deg2min
 
 """
 [Paper1]: Demmel2014 http://dx.doi.org/10.1016/j.nima.2014.09.019
@@ -19,7 +20,7 @@ from helper import wavelength_to_eV, points_distance, get_angle, vector_bisector
 def get_twotheta_analyser(geo_ctx: GeometryContext, analyser_point):
     vector_sa = points_to_vector(geo_ctx.sample_point, analyser_point)  # sa = sample_analyser
     vector_af = points_to_vector(analyser_point, geo_ctx.focus_point)  # af = analyser_focus
-    return get_angle(vector_sa, vector_af)
+    return angle_vectors(vector_sa, vector_af)
 
 
 # def get_analyser_angular_spread(geo_ctx: GeometryContext, sample, analyser_point, focus_point):
@@ -304,54 +305,54 @@ def plot_whole_geometry(geo_ctx: GeometryContext, instrument: InstrumentContext)
     print("{:s} plotted.".format(geo_ctx.filename_geometry))
 
 
-def get_resolution_robbewley(geo_ctx: GeometryContext, instrument: InstrumentContext, all_qxy, all_qz):
-    analyser_x, analyser_y = geo_ctx.analyser_points
-    detector_x, detector_y = geo_ctx.detector_points
-    if analyser_x.shape[0] != detector_x.shape[0]:
-        raise RuntimeError("Analyser and detector points have different sizes, {:d}, {:d}".format(analyser_x.shape[0],
-                                                                                                  detector_x.shape[0]))
-    all_delta_qxy = []
-    all_delta_qz = []
-    for i in range(analyser_x.shape[0]):
-        analyser_point = np.array([analyser_x[i], analyser_y[i]])
-        detector_point = np.array([detector_x[i], detector_y[i]])
-        distance_ad = np.linalg.norm(analyser_point - detector_point)
-
-        dx = np.sqrt((np.tan(2 * instrument.moasic_analyser) * distance_ad) ** 2 + instrument.analyser_segment ** 2)
-        x = detector_x[i]
-        thi = abs(dx / x)
-        dtheta = abs(instrument.analyser_segment / abs(analyser_point[0] - geo_ctx.sample_point[0]))
-        for j in range(len(azimuthal_angles)):
-            k = i * len(azimuthal_angles) + j
-            try:
-                if j == 0:
-                    dqxy = all_qxy[k] - all_qxy[k + 1]
-                else:
-                    dqxy = all_qxy[k] - all_qxy[k - 1]
-                dqxy = abs(dqxy)
-                delta_qxy = dqxy * thi / dtheta
-                all_delta_qxy.append(delta_qxy)
-            except IndexError:
-                print(i, j, k, analyser_x.shape[0], len(azimuthal_angles))
-
-        vector_ad = points_to_vector(analyser_point, detector_point)
-        theta0 = np.arctan(abs(vector_ad[1] / vector_ad[0]))
-        dxy = dx / np.sin(theta0)
-        x_spread = abs(dxy)
-        if i == 0:
-            next_point = np.array([detector_x[i + 1], detector_y[i + 1]])
-            x_point = abs(detector_point[0] - next_point[0])
-            dqz = all_qz[i] - all_qz[i + 1]
-
-        else:
-            last_point = np.array([detector_x[i - 1], detector_y[i - 1]])
-            x_point = abs(detector_point[0] - last_point[0])
-            dqz = all_qz[i] - all_qz[i - 1]
-        dqz = abs(dqz)
-        delta_qz = dqz * x_spread / x_point
-        all_delta_qz.append(delta_qz)
-    # print(len(all_delta_qxy), len(all_delta_qz))
-    return np.array(all_delta_qxy), np.array(all_delta_qz)
+# def get_resolution_robbewley(geo_ctx: GeometryContext, instrument: InstrumentContext, all_qxy, all_qz):
+#     analyser_x, analyser_y = geo_ctx.analyser_points
+#     detector_x, detector_y = geo_ctx.detector_points
+#     if analyser_x.shape[0] != detector_x.shape[0]:
+#         raise RuntimeError("Analyser and detector points have different sizes, {:d}, {:d}".format(analyser_x.shape[0],
+#                                                                                                   detector_x.shape[0]))
+#     all_delta_qxy = []
+#     all_delta_qz = []
+#     for i in range(analyser_x.shape[0]):
+#         analyser_point = np.array([analyser_x[i], analyser_y[i]])
+#         detector_point = np.array([detector_x[i], detector_y[i]])
+#         distance_ad = np.linalg.norm(analyser_point - detector_point)
+#
+#         dx = np.sqrt((np.tan(2 * instrument.moasic_analyser) * distance_ad) ** 2 + instrument.analyser_segment ** 2)
+#         x = detector_x[i]
+#         thi = abs(dx / x)
+#         dtheta = abs(instrument.analyser_segment / abs(analyser_point[0] - geo_ctx.sample_point[0]))
+#         for j in range(len(azimuthal_angles)):
+#             k = i * len(azimuthal_angles) + j
+#             try:
+#                 if j == 0:
+#                     dqxy = all_qxy[k] - all_qxy[k + 1]
+#                 else:
+#                     dqxy = all_qxy[k] - all_qxy[k - 1]
+#                 dqxy = abs(dqxy)
+#                 delta_qxy = dqxy * thi / dtheta
+#                 all_delta_qxy.append(delta_qxy)
+#             except IndexError:
+#                 print(i, j, k, analyser_x.shape[0], len(azimuthal_angles))
+#
+#         vector_ad = points_to_vector(analyser_point, detector_point)
+#         theta0 = np.arctan(abs(vector_ad[1] / vector_ad[0]))
+#         dxy = dx / np.sin(theta0)
+#         x_spread = abs(dxy)
+#         if i == 0:
+#             next_point = np.array([detector_x[i + 1], detector_y[i + 1]])
+#             x_point = abs(detector_point[0] - next_point[0])
+#             dqz = all_qz[i] - all_qz[i + 1]
+#
+#         else:
+#             last_point = np.array([detector_x[i - 1], detector_y[i - 1]])
+#             x_point = abs(detector_point[0] - last_point[0])
+#             dqz = all_qz[i] - all_qz[i - 1]
+#         dqz = abs(dqz)
+#         delta_qz = dqz * x_spread / x_point
+#         all_delta_qz.append(delta_qz)
+#     # print(len(all_delta_qxy), len(all_delta_qz))
+#     return np.array(all_delta_qxy), np.array(all_delta_qz)
 
 
 def plot_resolution(geo_ctx: GeometryContext, all_qxy, all_dqxy, all_qz, all_dqz):
@@ -407,8 +408,73 @@ def plot_resolution_comparison(all_qxy, all_dqxy, all_delta_qxy_rob, all_qz, all
     plt.savefig("Comparison_Vertical.pdf", bbox_inches='tight')
     plt.close(5)
 
-def write_mcstas(geo_ctx: GeometryContext):
+
+def write_mcstas(geo_ctx: GeometryContext, instrument: InstrumentContext):
+    f = open(geo_ctx.mcstas_filename, 'w+')
+    value_width_z = instrument.analyser_segment
+    value_height_y = instrument.analyser_segment
+    value_mosaic_horizontal = deg2min(np.rad2deg(instrument.moasic_analyser))
+    value_mosaic_vertical = deg2min(np.rad2deg(instrument.moasic_analyser))
+    value_lattice_distance = instrument.lattice_distance_pg002 * 1e10  # it is in angstrom for McStas
+    value_radius_horizontal_focusing = 0
+    value_number_slabs_horizontal = 0
+    value_angle_phi = 0
+    value_position_y = geo_ctx.analyser_points[1]
+    value_position_z = geo_ctx.analyser_points[0]
+    value_rotaion_x = -np.rad2deg(geo_ctx.mcstas_rotation_radian)
+    # for j, azimuthal_angle in enumerate(geo_ctx.azimuthal_angles):
+    # arm_sa_name = "{}{}".format(geo_ctx.arm_sa_name_prefix, j)
+    # string_arm_sa1 = "COMPONENT {} = Arm()\n".format(arm_sa_name)
+    # string_arm_sa2 = 'AT (0, 0, 0) RELATIVE {}\n'.format(geo_ctx.arm_sa_reference)
+    # string_arm_sa3 = 'ROTATED (0, {}, 0) RELATIVE {}\n\n'.format(np.rad2deg(azimuthal_angle),
+    #                                                              geo_ctx.arm_sa_reference)
+    # string_arm_sa = string_arm_sa1 + string_arm_sa2 + string_arm_sa3
+    # f.write(string_arm_sa)
+    # for i in range(geo_ctx.analyser_points[0].shape[0]):
+    #     # string1 = 'COMPONENT {}{} = {}({} = {}, {} = {}, {} = {}, {} = {}, {} = {}, {} = {}, {} = {}, {} = {})\n'.format(
+    #     #     geo_ctx.component_name_prefix, i, geo_ctx.component_type, geo_ctx.parameter_width_z, value_width_z,
+    #     #     geo_ctx.parameter_height_y, value_height_y, geo_ctx.parameter_mosaic_horizontal, value_mosaic_horizontal,
+    #     #     geo_ctx.parameter_mosaic_vertical, value_mosaic_vertical, geo_ctx.parameter_lattice_distance,
+    #     #     value_lattice_distance, geo_ctx.parameter_radius_horizontal_focusing,
+    #     #     value_radius_horizontal_focusing, geo_ctx.parameter_angle_phi, value_angle_phi,
+    #     #     geo_ctx.parameter_number_slabs_horizontal, value_number_slabs_horizontal)
+    #     arm_name = "{}{}_{}".format(geo_ctx.component_reference, j, i)
+    #     string_ar1 = "COMPONENT {} = Arm()\n".format(arm_name)
+    #     string_ar2 = 'AT (0, {}, {}) RELATIVE {}\n'.format(value_position_y[i], value_position_z[i],
+    #                                                        arm_sa_name)
+    #     string_ar3 = 'ROTATED ({}, 0, 0) RELATIVE {}\n\n'.format(value_rotaion_x[i], arm_sa_name)
+    #     string_arm = string_ar1 + string_ar2 + string_ar3
+    #     string_an1 = 'COMPONENT {}{}_{} = {}({} = {}, {} = {}, {} = {}, {} = {}, {} = {})\n'.format(
+    #         geo_ctx.component_name_prefix, j, i, geo_ctx.component_type, geo_ctx.parameter_width_z, value_width_z,
+    #         geo_ctx.parameter_height_y, value_height_y, geo_ctx.parameter_mosaic_horizontal,
+    #         value_mosaic_horizontal,
+    #         geo_ctx.parameter_mosaic_vertical, value_mosaic_vertical, geo_ctx.parameter_lattice_distance,
+    #         value_lattice_distance)
+    #     string_an2 = 'AT (0, 0, 0) RELATIVE {}\n'.format(arm_name)
+    #     string_an3 = 'ROTATED (0, 0, -90) RELATIVE {}\n'.format(arm_name)
+    #     # string_an3 = 'ROTATED (90, 90, 0) RELATIVE {}\n'.format(geo_ctx.component_reference)
+    #     string_an4 = 'GROUP {}\n\n'.format(geo_ctx.group_name)
+    #     string_analyser = string_an1 + string_an2 + string_an3 + string_an4
+    # #     f.write(string_arm + string_analyser)
+
+    # This is the code for analyser segments at one azimuthal angle without arms
+    # for i in range(geo_ctx.analyser_points[0].shape[0]):
+    #     string_an1 = 'COMPONENT {}{} = {}({} = {}, {} = {}, {} = {}, {} = {}, {} = {})\n'.format(
+    #         geo_ctx.component_name_prefix, i, geo_ctx.component_type, geo_ctx.parameter_width_z, value_width_z,
+    #         geo_ctx.parameter_height_y, value_height_y, geo_ctx.parameter_mosaic_horizontal,
+    #         value_mosaic_horizontal,
+    #         geo_ctx.parameter_mosaic_vertical, value_mosaic_vertical, geo_ctx.parameter_lattice_distance,
+    #         value_lattice_distance)
+    #     string_an2 = 'AT (0, {}, {}) RELATIVE {}\n'.format(value_position_y[i], value_position_z[i],
+    #                                                        geo_ctx.component_reference)
+    #     string_an3 = 'ROTATED ({}, 0, 90) RELATIVE {}\n'.format(value_rotaion_x[i], geo_ctx.component_reference)
+    #     # string_an3 = 'ROTATED (90, 90, 0) RELATIVE {}\n'.format(geo_ctx.component_reference)
+    #     string_an4 = 'GROUP {}\n\n'.format(geo_ctx.group_name)
+    #     string_analyser = string_an1 + string_an2 + string_an3 + string_an4
+    #     f.write(string_analyser)
+    f.close()
     pass
+
 
 def plot_resolution_polarangles(geo_ctx: GeometryContext, polar_angles, all_dqx_m, all_dqy_m, all_dqz_m, all_kf):
     plt.rcParams.update({'font.size': 12})
@@ -545,31 +611,32 @@ instrumentctx = InstrumentContext()
 
 # points_x, points_y = geometryctx.analyser_points
 
-plt.figure(1)
-ax = plt.gca()
-ax.set_aspect('equal', 'box')
-ax.spines['right'].set_visible(False)
-ax.spines['top'].set_visible(False)
-# ax.add_patch(ellipse)
-
-# generates the azimuthal angle elements based on the size of the analyser segments
-angle_one_segment = np.arcsin(instrumentctx.analyser_segment / geometryctx.start_distance)
-azimuthal_start = np.deg2rad(5.)  # radian
-azimuthal_stop = np.deg2rad(170.)  # radian
-number_points = round(abs(azimuthal_start - azimuthal_stop / angle_one_segment))
-azimuthal_angles = np.linspace(azimuthal_start, azimuthal_stop, num=number_points)
-polar_angles = np.arctan(geometryctx.analyser_points[1][:] / geometryctx.analyser_points[0][:])
-
-all_qxy, all_qz, all_dqxy, all_dqz, all_dqx_m, all_dqy_m, all_dqz_m = resolution_calculation(geo_ctx=geometryctx,
-                                                                                             instrument=instrumentctx,
-                                                                                             polar_angles=polar_angles,
-                                                                                             azimuthal_angles=azimuthal_angles)
-all_kf = np.array(list(map(lambda x, y: wavenumber_bragg(geo_ctx=geometryctx, instrument=instrumentctx,
-                                                         analyser_point=[x, y]), geometryctx.analyser_points[0],
-                           geometryctx.analyser_points[1])))
-plot_whole_geometry(geo_ctx=geometryctx, instrument=instrumentctx)
-plot_resolution_polarangles(geo_ctx=geometryctx, polar_angles=polar_angles, all_dqx_m=all_dqx_m, all_dqy_m=all_dqy_m,
-                            all_dqz_m=all_dqz_m, all_kf=all_kf)
+# plt.figure(1)
+# ax = plt.gca()
+# ax.set_aspect('equal', 'box')
+# ax.spines['right'].set_visible(False)
+# ax.spines['top'].set_visible(False)
+# # ax.add_patch(ellipse)
+#
+# # generates the azimuthal angle elements based on the size of the analyser segments
+# azimuthal_start = np.deg2rad(5.)  # radian
+# azimuthal_stop = np.deg2rad(170.)  # radian
+# angle_one_segment = np.arcsin(instrumentctx.analyser_segment / geometryctx.start_distance)
+# number_points = round(abs(azimuthal_start - azimuthal_stop / angle_one_segment))
+# azimuthal_angles = np.linspace(azimuthal_start, azimuthal_stop, num=number_points)
+# polar_angles = np.arctan(geometryctx.analyser_points[1][:] / geometryctx.analyser_points[0][:])
+#
+# all_qxy, all_qz, all_dqxy, all_dqz, all_dqx_m, all_dqy_m, all_dqz_m = resolution_calculation(geo_ctx=geometryctx,
+#                                                                                              instrument=instrumentctx,
+#                                                                                              polar_angles=polar_angles,
+#                                                                                              azimuthal_angles=azimuthal_angles)
+# all_kf = np.array(list(map(lambda x, y: wavenumber_bragg(geo_ctx=geometryctx, instrument=instrumentctx,
+#                                                          analyser_point=[x, y]), geometryctx.analyser_points[0],
+#                            geometryctx.analyser_points[1])))
+# plot_whole_geometry(geo_ctx=geometryctx, instrument=instrumentctx)
+# plot_resolution_polarangles(geo_ctx=geometryctx, polar_angles=polar_angles, all_dqx_m=all_dqx_m, all_dqy_m=all_dqy_m,
+#                             all_dqz_m=all_dqz_m, all_kf=all_kf)
+write_mcstas(geo_ctx=geometryctx, instrument=instrumentctx)
 
 # plot_analyser_comparison(points_analyser_x=geometryctx.analyser_ellipse_points[0],
 #                          points_analyser_y=geometryctx.analyser_ellipse_points[1],

@@ -47,13 +47,17 @@ class GeometryContext(object):
         self.analyser_segment_size = 1e-2  # m
         instrumentctx = InstrumentContext()
         points_x, points_y, self.mcstas_rotation_radian = self._generate_analyser_segments(instrument=instrumentctx)
+        self.polar_angles = np.arctan(points_y / points_x)
         self.analyser_points = (points_x, points_y)
+        middle_index = np.argmin(np.abs(self.polar_angles - self.angle_middle))
+        print(
+            "The point at the middle polar angle: Nr. {} at (0, {}, {})".format(middle_index, points_y[middle_index],
+                                                                                points_x[middle_index]))
 
         azimuthal_start = np.deg2rad(5.)  # radian
         azimuthal_stop = np.deg2rad(170.)  # radian
         angle_one_segment = np.arcsin(instrumentctx.analyser_segment / self.start_distance)
-        # number_points = int(round(abs(azimuthal_start - azimuthal_stop / angle_one_segment)))
-        number_points = 10
+        number_points = int(round(abs(azimuthal_start - azimuthal_stop / angle_one_segment)))
         print(azimuthal_start, azimuthal_stop, number_points)
         self.azimuthal_angles = np.linspace(azimuthal_start, azimuthal_stop, num=number_points)
 

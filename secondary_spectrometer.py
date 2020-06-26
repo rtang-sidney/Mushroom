@@ -416,12 +416,9 @@ def write_mcstas(geo_ctx: GeometryContext, instrument: InstrumentContext):
     value_mosaic_horizontal = deg2min(np.rad2deg(instrument.moasic_analyser))
     value_mosaic_vertical = deg2min(np.rad2deg(instrument.moasic_analyser))
     value_lattice_distance = instrument.lattice_distance_pg002 * 1e10  # it is in angstrom for McStas
-    value_radius_horizontal_focusing = 0
-    value_number_slabs_horizontal = 0
-    value_angle_phi = 0
     value_position_y = geo_ctx.analyser_points[1]
     value_position_z = geo_ctx.analyser_points[0]
-    value_rotaion_x = -np.rad2deg(geo_ctx.mcstas_rotation_radian)
+    value_rotation_x = -np.rad2deg(geo_ctx.mcstas_rotation_radian)
 
     # for j, azimuthal_angle in enumerate(geo_ctx.azimuthal_angles):
     #     arm_sa_name = "{}{}".format(geo_ctx.arm_sa_name_prefix, j)
@@ -439,7 +436,7 @@ def write_mcstas(geo_ctx: GeometryContext, instrument: InstrumentContext):
     #             geo_ctx.parameter_mosaic_vertical, value_mosaic_vertical, geo_ctx.parameter_lattice_distance,
     #             value_lattice_distance)
     #         string_an2 = 'AT (0, {}, {}) RELATIVE {}\n'.format(value_position_y[i], value_position_z[i], arm_sa_name)
-    #         string_an3 = 'ROTATED ({}, 0, 90) RELATIVE {}\n'.format(value_rotaion_x[i], arm_sa_name)
+    #         string_an3 = 'ROTATED ({}, 0, 90) RELATIVE {}\n'.format(value_rotation_x[i], arm_sa_name)
     #         # string_an3 = 'ROTATED (90, 90, 0) RELATIVE {}\n'.format(geo_ctx.component_reference)
     #         string_an4 = 'GROUP {}\n\n'.format(geo_ctx.group_name)
     #         string_analyser = string_an1 + string_an2 + string_an3 + string_an4
@@ -455,7 +452,7 @@ def write_mcstas(geo_ctx: GeometryContext, instrument: InstrumentContext):
             value_lattice_distance)
         string_an2 = 'AT (0, {}, {}) RELATIVE {}\n'.format(value_position_y[i], value_position_z[i],
                                                            geo_ctx.component_reference)
-        string_an3 = 'ROTATED ({}, 0, 90) RELATIVE {}\n'.format(value_rotaion_x[i], geo_ctx.component_reference)
+        string_an3 = 'ROTATED ({}, 0, 90) RELATIVE {}\n'.format(value_rotation_x[i], geo_ctx.component_reference)
         # string_an3 = 'ROTATED (90, 90, 0) RELATIVE {}\n'.format(geo_ctx.component_reference)
         string_an4 = 'GROUP {}\n\n'.format(geo_ctx.group_name)
         string_analyser = string_an1 + string_an2 + string_an3 + string_an4

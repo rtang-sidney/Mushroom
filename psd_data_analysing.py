@@ -32,8 +32,10 @@ PATTERN_XYLIMITS = re.compile(
 PATTERN_POSITION = re.compile(r"\s*([-+]?[0-9]*\.?[0-9]*)\s([-+]?[0-9]*\.?[0-9]*)\s([-+]?[0-9]*\.?[0-9]*)")
 
 
-class PsdInformation():
-    def __init__(self, filename, geometryctx: GeometryContext, instrumentctx=InstrumentContext):  # psd_type, psd_name,
+class PsdInformation:
+    def __init__(self, filename):  # psd_type, psd_name,
+        geometryctx = GeometryContext(side="same")
+        instrumentctx = InstrumentContext()
         f = open(file=filename).readlines()
         keys = []
         contents = []
@@ -67,11 +69,9 @@ class PsdInformation():
         return re.search(pattern=PATTERN_POSITION, string=self.metadata_dict[KEY_POSITION]).group(2)
 
     def _position2kf(self, geo_ctx: GeometryContext, instrument: InstrumentContext):
-
         value_xvar = self.metadata_dict[KEY_XVAR]
         if self.metadata_dict[KEY_XVAR] == PSDCYL_XVAR:
             azimuthal_angles = np.deg2rad(self.xaxis)
-
             psdcyl_real_y = float(self._get_psdcyl_middle()) - self.yaxis
             # the psdcyl in McStas is defined by the middle point and the height, whereas the position with respect to
             # the sample is needed in our program
@@ -86,7 +86,7 @@ class PsdInformation():
                     geo_ctx.analyser_points[0][index_shortest], geo_ctx.analyser_points[1][index_shortest]))
                 wavenumbers.append(wavenumber)
             wavenumbers = np.array(wavenumbers)
-            return np.meshgrid(azimuthal_angles,wavenumbers)
+            return np.meshgrid(azimuthal_angles, wavenumbers)
         elif self.metadata_dict[KEY_XVAR] == PSD_XVAR:
             pass
         else:
@@ -140,7 +140,7 @@ cyl_centre = -1.05  # vertical position of the centre of the cylindrical PSD
 psdcyl = PsdInformation(filename="/".join([folder, file_psd_cyl]))
 
 plt.figure(1)
-plt.contourf(psdcyl.xx, psdcyl.yy, psdcyl.intensities)
+plt.contourf(psdcyl.azimuthal_angles2d, psdcyl.wavenumbers2d, psdcyl.intensities)
 plt.colorbar()
 
 psdflat = PsdInformation(filename="/".join([folder, file_psd_flat]))

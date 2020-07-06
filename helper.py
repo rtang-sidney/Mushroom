@@ -86,7 +86,7 @@ def points_to_line(point1, point2):
         matrix = np.array([[x1, y1], [x2, y2]])
         array = np.full(2, 1.0)
         a, b = np.linalg.solve(matrix, array)
-        return a, b, 1.0
+        return a, b, -1.0
 
 
 def points_to_vector(point1, point2):
@@ -95,11 +95,11 @@ def points_to_vector(point1, point2):
 
 
 def parameters_to_line(slope, y_intersect=None):
-    # gives the line parameters in the form ax+by=c from the form y = ax+b where a is the slope and b is the y intersect
+    # gives the line parameters in the form ax+by+c=0 from the form y=ax+b where a is the slope and b is the y intersect
     if y_intersect is None:
         return slope, -1., 0.
     else:
-        return slope, -1., -y_intersect
+        return slope, -1., y_intersect
 
 
 def lines_intersect(line1, line2):
@@ -110,7 +110,7 @@ def lines_intersect(line1, line2):
         a2 = line2[0]
         b2 = line2[1]
         matrix = np.array([[a1, b1], [a2, b2]])
-        array = np.array([line1[2], line2[2]])
+        array = -np.array([line1[2], line2[2]])
         x1, x2 = np.linalg.solve(matrix, array)
         return x1, x2
     else:
@@ -170,3 +170,12 @@ def deg2min(angle_in_degree):
         return 60 * angle_in_degree
     else:
         raise ValueError("Invalid angle given")
+
+
+def distance_point2line(point, line):
+    # gives the distance from a point (x0,y0) to a line ax+by+c=0
+    # works also for multiple points with points=(x_values, y_values), where both x and y values are numpy arrays with
+    # the same length
+    x0, y0 = point
+    a, b, c = line
+    return np.abs((a * x0 + b * y0 + c) / np.linalg.norm([a, b]))

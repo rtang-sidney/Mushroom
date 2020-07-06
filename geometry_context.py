@@ -177,9 +177,9 @@ class GeometryContext(object):
         for i in range(analyser_x.shape[0]):
             line_af = points_to_line(self.focus_point, [analyser_x[i], analyser_y[i]])
             detector_point = lines_intersect(line1=line_af, line2=self.detector_line_hori)
-            if detector_point[0] - self.detector_line_vert[2] < - ZERO_TOL:
+            if detector_point[0] + self.detector_line_vert[2] < - ZERO_TOL:
                 detector_point = lines_intersect(line1=line_af, line2=self.detector_line_vert)
-                if detector_point[1] - self.detector_line_hori[2] < - ZERO_TOL:
+                if detector_point[1] + self.detector_line_hori[2] < - ZERO_TOL:
                     raise RuntimeError("Failed to find a detector point.")
             detector_x.append(detector_point[0])
             detector_y.append(detector_point[1])

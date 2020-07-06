@@ -14,7 +14,7 @@ from helper import wavelength_to_eV, points_distance, angle_vectors, vector_bise
 
 
 # Comment from Alex <3
-# line: ax + by = c -> (a, b, c)
+# line: ax + by + c = 0 -> (a, b, c)
 
 
 def get_twotheta_analyser(geo_ctx: GeometryContext, analyser_point):

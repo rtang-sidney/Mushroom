@@ -23,9 +23,9 @@ class GeometryContext(object):
 
         # self.detector_line1 = [0.0, 1.0, -1.6]  # [0, 1, v]: v -> vertical position (m) of the horizontal bank
         # self.detector_line2 = [1.0, 0.0, 0.4]  # [1, 0, h]: h -> horizontal position (m) of the vertical bank
-        self.detector_line1 = [0.0, 1.0, -1.0]  # [0, 1, v]: v -> vertical position (m) of the horizontal bank
-        self.detector_line2 = [1.0, 0.0, 0.6]  # [1, 0, h]: h -> horizontal position (m) of the vertical bank
-        detector_suffix = '_{:2.1f}_{:2.1f}'.format(abs(self.detector_line2[2]), abs(self.detector_line1[2]))
+        self.detector_line_hori = [0.0, 1.0, 1.0]  # [0, 1, -v]: v -> vertical position (m) of the horizontal bank
+        self.detector_line_vert = [1.0, 0.0, -0.6]  # [1, 0, -h]: h -> horizontal position (m) of the vertical bank
+        detector_suffix = '_{:2.1f}_{:2.1f}'.format(abs(self.detector_line_vert[2]), abs(self.detector_line_hori[2]))
 
         if side == "same":
             self.focus_point = (0.9, -0.4)  # m
@@ -176,11 +176,11 @@ class GeometryContext(object):
         analyser_x, analyser_y = self.analyser_points[:2]
         for i in range(analyser_x.shape[0]):
             line_af = points_to_line(self.focus_point, [analyser_x[i], analyser_y[i]])
-            detector_point = lines_intersect(line1=line_af, line2=self.detector_line1)
-            if detector_point[0] - self.detector_line2[2] < - ZERO_TOL:
-                detector_point = lines_intersect(line1=line_af, line2=self.detector_line2)
-                if detector_point[1] - self.detector_line1[2] < - ZERO_TOL:
-                    raise RuntimeError("Failed to find the detector point.")
+            detector_point = lines_intersect(line1=line_af, line2=self.detector_line_hori)
+            if detector_point[0] - self.detector_line_vert[2] < - ZERO_TOL:
+                detector_point = lines_intersect(line1=line_af, line2=self.detector_line_vert)
+                if detector_point[1] - self.detector_line_hori[2] < - ZERO_TOL:
+                    raise RuntimeError("Failed to find a detector point.")
             detector_x.append(detector_point[0])
             detector_y.append(detector_point[1])
         if detector_x[0] * detector_x[-1] < 0:

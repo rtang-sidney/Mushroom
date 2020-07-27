@@ -21,10 +21,10 @@ class GeometryContext(object):
         self.start_point = [self.start_distance * np.cos(self.angle_plus),
                             self.start_distance * np.sin(self.angle_plus)]
 
-        # self.detector_line1 = [0.0, 1.0, -1.6]  # [0, 1, v]: v -> vertical position (m) of the horizontal bank
-        # self.detector_line2 = [1.0, 0.0, 0.4]  # [1, 0, h]: h -> horizontal position (m) of the vertical bank
-        self.detector_line_hori = [0.0, 1.0, 1.0]  # [0, 1, -v]: v -> vertical position (m) of the horizontal bank
-        self.detector_line_vert = [1.0, 0.0, -0.6]  # [1, 0, -h]: h -> horizontal position (m) of the vertical bank
+        self.detector_line_hori = [0.0, 1.0, 1.6]  # [0, 1, -v]: v -> vertical position (m) of the horizontal bank
+        self.detector_line_vert = [1.0, 0.0, -0.4]  # [1, 0, -h]: h -> horizontal position (m) of the vertical bank
+        # self.detector_line_hori = [0.0, 1.0, 1.0]  # [0, 1, -v]: v -> vertical position (m) of the horizontal bank
+        # self.detector_line_vert = [1.0, 0.0, -0.6]  # [1, 0, -h]: h -> horizontal position (m) of the vertical bank
         detector_suffix = '_{:2.1f}_{:2.1f}'.format(abs(self.detector_line_vert[2]), abs(self.detector_line_hori[2]))
 
         if side == "same":
@@ -47,23 +47,28 @@ class GeometryContext(object):
         self.analyser_segment_size = 1e-2  # m
         instrumentctx = InstrumentContext()
         points_x, points_y, self.mcstas_rotation_radian = self._generate_analyser_segments(instrument=instrumentctx)
-        self.polar_angles = np.arctan(points_y / points_x)
+        self.polar_angles = np.arctan2(points_y, points_x)
         self.analyser_points = (points_x, points_y)
-        middle_index = np.argmin(np.abs(self.polar_angles - self.angle_middle))
-        print(
-            "The point at the middle polar angle: Nr. {} at (0, {}, {})".format(middle_index, points_y[middle_index],
-                                                                                points_x[middle_index]))
+        self.wavenumbers = self._wavenumbers_from_analyser(instrument=instrumentctx)
+        # print(self.wavenumbers)
+        # self.middle_index = np.argmin(np.abs(self.polar_angles - self.angle_middle))
+        # print(
+        #     "The point at the middle polar angle: Nr. {} at (0, {}, {})".format(self.middle_index,
+        #                                                                         points_y[self.middle_index],
+        #                                                                         points_x[self.middle_index]))
 
         azimuthal_start = np.deg2rad(5.)  # radian
         azimuthal_stop = np.deg2rad(170.)  # radian
         angle_one_segment = np.arcsin(instrumentctx.analyser_segment / self.start_distance)
         number_points = int(round(abs(azimuthal_start - azimuthal_stop / angle_one_segment)))
-        print(azimuthal_start, azimuthal_stop, number_points)
+        # print(azimuthal_start, azimuthal_stop, number_points)
         self.azimuthal_angles = np.linspace(azimuthal_start, azimuthal_stop, num=number_points)
 
         # if the analyser is generated as a part of an ideal ellipse:
         self.analyser_ellipse_points = self._generate_analyser_ellipse()
-        self.detector_points = self._detector_from_analyser()
+        self.detector_points = self._detector_from_analyser()[:2]
+        self.dete_hori_x, self.dete_vert_y = self._detector_from_analyser()[2:]
+        # print(self.dete_hori_x, '\n\n', self.dete_vert_y)
 
         self.mcstas_filename = 'Analyser_McStas.dat'
         self.arm_sa_name_prefix = "arm_sa_an"
@@ -80,6 +85,17 @@ class GeometryContext(object):
         self.parameter_angle_phi = "phi"
         self.component_reference = "analyser_arm"
         self.group_name = "analyser"
+
+    def sample_orientation(self, instrument: InstrumentContext, ki=1.4 * 1e10, aa=4.5 * 1e-10, qh=1.0):
+        hori_index = np.argmin(abs(self.analyser_points[1]))
+        # hori_polar = self.polar_angles[hori_index]
+        hori_orien = abs(self.mcstas_rotation_radian[hori_index])
+        # print(hori_index, hori_orien)
+        kf0 = np.pi / (instrument.lattice_distance_pg002 * np.sin(hori_orien))
+        q = qh * 2 * np.pi / aa
+        # print(ki, q, kf0)
+        sample_rotation = np.arccos((ki ** 2 + q ** 2 - kf0 ** 2) / (2 * q * ki))
+        return sample_rotation
 
     def _ellipse_points_to_parameters(self):
         """
@@ -173,16 +189,42 @@ class GeometryContext(object):
     def _detector_from_analyser(self):
         detector_x = []
         detector_y = []
+        detector_hori_x = []
+        detector_vert_y = []
         analyser_x, analyser_y = self.analyser_points[:2]
         for i in range(analyser_x.shape[0]):
             line_af = points_to_line(self.focus_point, [analyser_x[i], analyser_y[i]])
             detector_point = lines_intersect(line1=line_af, line2=self.detector_line_hori)
-            if detector_point[0] + self.detector_line_vert[2] < - ZERO_TOL:
+            if detector_point[0] + self.detector_line_vert[-1] < - ZERO_TOL:
                 detector_point = lines_intersect(line1=line_af, line2=self.detector_line_vert)
-                if detector_point[1] + self.detector_line_hori[2] < - ZERO_TOL:
+                detector_vert_y.append(detector_point[1])
+                if detector_point[1] + self.detector_line_hori[-1] < - ZERO_TOL:
                     raise RuntimeError("Failed to find a detector point.")
+            else:
+                detector_hori_x.append(detector_point[0])
             detector_x.append(detector_point[0])
             detector_y.append(detector_point[1])
         if detector_x[0] * detector_x[-1] < 0:
             raise RuntimeError("Detector points overlap.")
-        return np.array(detector_x), np.array(detector_y)
+        return np.array(detector_x), np.array(detector_y), np.array(detector_hori_x), np.array(detector_vert_y)
+
+    def _wavenumbers_from_analyser(self, instrument: InstrumentContext):
+        kf = list(map(lambda i: self.wavenumber_bragg(instrument=instrument, analyser_point=(
+            self.analyser_points[0][i], self.analyser_points[1][i])), range(self.analyser_points[0].shape[0])))
+        return np.array(kf)
+
+    def wavelength_bragg(self, instrument: InstrumentContext, analyser_point, order_parameter=1):
+        # gives the wavelength from the Bragg's law
+        scattering_2theta = self.get_twotheta_analyser(analyser_point=analyser_point)
+        return 2. * instrument.lattice_distance_pg002 * np.sin(scattering_2theta / 2.) / float(order_parameter)
+
+    def wavenumber_bragg(self, instrument: InstrumentContext, analyser_point, order_parameter=1):
+        # gives the wave number from the Bragg's law
+        wavelength = self.wavelength_bragg(instrument=instrument, analyser_point=analyser_point,
+                                           order_parameter=order_parameter)
+        return 2. * np.pi / wavelength
+
+    def get_twotheta_analyser(self, analyser_point):
+        vector_sa = points_to_vector(self.sample_point, analyser_point)  # sa = sample_analyser
+        vector_af = points_to_vector(analyser_point, self.focus_point)  # af = analyser_focus
+        return angle_vectors(vector_sa, vector_af)

@@ -110,7 +110,7 @@ def lines_intersect(line1, line2):
         a2 = line2[0]
         b2 = line2[1]
         matrix = np.array([[a1, b1], [a2, b2]])
-        array = -np.array([line1[2], line2[2]])
+        array = -np.array([line1[-1], line2[-1]])
         x1, x2 = np.linalg.solve(matrix, array)
         return x1, x2
     else:

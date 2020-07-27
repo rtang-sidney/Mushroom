@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from geometry_context import GeometryContext
-from helper import wavelength_to_eV, points_distance, angle_vectors, vector_bisector, InstrumentContext, \
+from helper import wavelength_to_eV, points_distance, vector_bisector, InstrumentContext, \
     points_to_vector, \
     get_kf_vector, points_to_slope_radian, unit_vector, vector_project_a2b, deg2min
 
@@ -15,12 +15,6 @@ from helper import wavelength_to_eV, points_distance, angle_vectors, vector_bise
 
 # Comment from Alex <3
 # line: ax + by + c = 0 -> (a, b, c)
-
-
-def get_twotheta_analyser(geo_ctx: GeometryContext, analyser_point):
-    vector_sa = points_to_vector(geo_ctx.sample_point, analyser_point)  # sa = sample_analyser
-    vector_af = points_to_vector(analyser_point, geo_ctx.focus_point)  # af = analyser_focus
-    return angle_vectors(vector_sa, vector_af)
 
 
 # def get_analyser_angular_spread(geo_ctx: GeometryContext, sample, analyser_point, focus_point):
@@ -39,10 +33,10 @@ def get_uncertainty_kf(geo_ctx: GeometryContext, instrument: InstrumentContext, 
                        analyser_point_nearest, kf):
     angular_uncertainty_analyser = get_angular_resolution_analyser(geo_ctx=geo_ctx, instrument=instrument,
                                                                    analyser_point=analyser_point_now)
-    twotheta_analyser = get_twotheta_analyser(geo_ctx=geo_ctx, analyser_point=analyser_point_now)
+    twotheta_analyser = geo_ctx.get_twotheta_analyser(analyser_point=analyser_point_now)
     uncertainty_kf_bragg = kf * np.sqrt(np.sum(np.square(
         [instrument.deltad_d, angular_uncertainty_analyser / np.tan(twotheta_analyser / 2.0)])))  # from Bragg's law
-    kf_nearest = wavenumber_bragg(geo_ctx=geo_ctx, instrument=instrument, analyser_point=analyser_point_nearest)
+    kf_nearest = geo_ctx.wavenumber_bragg(instrument=instrument, analyser_point=analyser_point_nearest)
     uncertainty_kf_segment = abs(kf - kf_nearest)
     return max(uncertainty_kf_bragg, uncertainty_kf_segment)
 
@@ -67,8 +61,7 @@ def get_uncertainty_theta(geo_ctx: GeometryContext, instrument: InstrumentContex
 
 def get_relative_uncertainty_energy(geo_ctx: GeometryContext, instrument: InstrumentContext, analyser_point,
                                     nearest_point):
-    kf = wavenumber_bragg(geo_ctx=geo_ctx, instrument=instrument,
-                          analyser_point=analyser_point)  # outgoing wave number
+    kf = geo_ctx.wavenumber_bragg(instrument=instrument, analyser_point=analyser_point)  # outgoing wave number
     delta_kf = get_uncertainty_kf(geo_ctx, instrument, analyser_point_now=analyser_point,
                                   analyser_point_nearest=nearest_point, kf=kf)
     return 2. * delta_kf / kf
@@ -153,19 +146,6 @@ def get_dq_mcstas_coordinate(geo_ctx: GeometryContext, instrument: InstrumentCon
     return [dqx, dqy, dqz]
 
 
-def wavelength_bragg(geo_ctx: GeometryContext, instrument: InstrumentContext, analyser_point, order_parameter=1):
-    # gives the wavelength from the Bragg's law
-    scattering_2theta = get_twotheta_analyser(geo_ctx=geo_ctx, analyser_point=analyser_point)
-    return 2. * instrument.lattice_distance_pg002 * np.sin(scattering_2theta / 2.) / float(order_parameter)
-
-
-def wavenumber_bragg(geo_ctx: GeometryContext, instrument: InstrumentContext, analyser_point, order_parameter=1):
-    # gives the wave number from the Bragg's law
-    wavelength = wavelength_bragg(geo_ctx=geo_ctx, instrument=instrument, analyser_point=analyser_point,
-                                  order_parameter=order_parameter)
-    return 2. * np.pi / wavelength
-
-
 def get_resolution_qy(geo_ctx: GeometryContext, instrument: InstrumentContext, kf, phi, theta, analyser_point_now,
                       analyser_point_nearest, qxy, ki=None):
     delta_kf = get_uncertainty_kf(geo_ctx, instrument=instrument, analyser_point_now=analyser_point_now,
@@ -237,7 +217,7 @@ def coordinate_transformation(theta, phi, vector):
 def plot_whole_geometry(geo_ctx: GeometryContext, instrument: InstrumentContext):
     def plot_for_analyser_point(instrument: InstrumentContext, analyser_point, nearest_point, detector_point):
         energy_ev = wavelength_to_eV(
-            wavelength=wavelength_bragg(instrument=instrument, analyser_point=analyser_point, geo_ctx=geo_ctx))
+            wavelength=geo_ctx.wavelength_bragg(instrument=instrument, analyser_point=analyser_point))
         e_resolution_ev = get_relative_uncertainty_energy(geo_ctx=geo_ctx, analyser_point=analyser_point,
                                                           nearest_point=nearest_point,
                                                           instrument=instrument)
@@ -280,7 +260,7 @@ def plot_whole_geometry(geo_ctx: GeometryContext, instrument: InstrumentContext)
                             nearest_point=[geo_ctx.analyser_points[0][-2], geo_ctx.analyser_points[1][-2]])
 
     index_largest_energy = np.argmax(np.array(list(
-        map(lambda x, y: wavenumber_bragg(geo_ctx=geo_ctx, instrument=instrument, analyser_point=[x, y]),
+        map(lambda x, y: geo_ctx.wavenumber_bragg(instrument=instrument, analyser_point=[x, y]),
             geo_ctx.analyser_points[0], geo_ctx.analyser_points[1]))))
     plot_for_analyser_point(instrument=instrument, analyser_point=[geo_ctx.analyser_points[0][index_largest_energy],
                                                                    geo_ctx.analyser_points[1][index_largest_energy]],
@@ -524,7 +504,7 @@ def resolution_calculation(geo_ctx: GeometryContext, instrument: InstrumentConte
         else:
             j = i - 1
         point_nearest = [geo_ctx.analyser_points[0][j], geo_ctx.analyser_points[1][j]]
-        kf = wavenumber_bragg(geo_ctx=geo_ctx, instrument=instrument, analyser_point=point_now)
+        kf = geo_ctx.wavenumber_bragg(instrument=instrument, analyser_point=point_now)
         qz = get_qz(kf=kf, polar_angle=phi)
         delta_qz = get_resolution_qz(geo_ctx=geo_ctx, instrument=instrument, analyser_point_now=point_now,
                                      analyser_point_nearest=point_nearest, kf=kf, phi=phi)
@@ -621,7 +601,7 @@ instrumentctx = InstrumentContext()
 # plot_whole_geometry(geo_ctx=geometryctx, instrument=instrumentctx)
 # plot_resolution_polarangles(geo_ctx=geometryctx, polar_angles=polar_angles, all_dqx_m=all_dqx_m, all_dqy_m=all_dqy_m,
 #                             all_dqz_m=all_dqz_m, all_kf=all_kf)
-write_mcstas(geo_ctx=geometryctx, instrument=instrumentctx)
+# write_mcstas(geo_ctx=geometryctx, instrument=instrumentctx)
 
 # plot_analyser_comparison(points_analyser_x=geometryctx.analyser_ellipse_points[0],
 #                          points_analyser_y=geometryctx.analyser_ellipse_points[1],
@@ -634,3 +614,37 @@ write_mcstas(geo_ctx=geometryctx, instrument=instrumentctx)
 #                            all_delta_qz_rob=all_delta_qz_rob)
 
 # check_detector_spread(geo_ctx=geometryctx, instrument=instrumentctx)
+
+kf = geometryctx.wavenumbers
+# detec_hori_x = geometryctx.dete_hori_x
+# detec_vert_y = geometryctx.dete_vert_y
+# fig, axs = plt.subplots(1, 2, sharey="all")
+# axs[0].plot(detec_hori_x, kf[:detec_hori_x.shape[0]] * 1e-10)
+# axs[1].plot(detec_vert_y, kf[detec_hori_x.shape[0]:] * 1e-10)
+# axs[0].set_xlabel("Radial position of flat PSD (m)")
+# axs[1].set_xlabel("Vertical position of cyl. PSDs (m)")
+# axs[0].set_ylabel(r"Theoretical values of $k_f$ ($\AA^{-1}$)")
+# axs[0].grid()
+# axs[1].grid()
+# fig.suptitle(r"$k_f$ values - PSD positions")
+# plt.tight_layout(rect=[0, 0, 1, 0.95])
+# plt.savefig("kf_values_psd_positions.pdf")
+# # plt.show()
+# plt.close(fig)
+
+# plt.figure()
+distances = np.linalg.norm([geometryctx.analyser_points[0], geometryctx.analyser_points[1]], axis=0)
+scatt_angles = np.array(list(map(lambda i: geometryctx.get_twotheta_analyser(
+    analyser_point=[geometryctx.analyser_points[0][i], geometryctx.analyser_points[1][i]]),
+                        range(geometryctx.analyser_points[0].shape[0]))))
+
+fig, axs = plt.subplots(1, 3, sharey="all")
+# axs[0].plot(geometryctx.detector_points[0], kf * 1e-10)
+axs[0].plot(np.rad2deg(geometryctx.polar_angles), kf * 1e-10)
+axs[1].plot(geometryctx.detector_points[1], kf * 1e-10)
+# axs[1].plot(np.rad2deg(scatt_angles / 2.0), kf * 1e-10)
+axs[2].plot(distances, kf * 1e-10)
+axs[0].grid()
+axs[1].grid()
+axs[2].grid()
+plt.show()

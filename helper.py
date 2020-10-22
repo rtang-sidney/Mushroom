@@ -1,5 +1,13 @@
-import numpy
 import numpy as np
+import matplotlib.pyplot as plt
+
+ZERO_TOL = 1e-6
+MASS_NEUTRON = 1.67492749804e-27  # kg
+PLANCKS_CONSTANT = 1.0545718e-34  # m2 kg / s, h-bar
+CONVERSION_JOULE_PER_EV = 1.602176634e-19  # J / eV
+BOLTZMANN = 1.380649e-23  # J / K
+FACTOR_GAMMA = 1.913  # dimensionless constant
+THOMSON_SCATT_LENGTH = 2.818e-15  # m, classical radius of electrons
 
 
 class InstrumentContext(object):
@@ -8,17 +16,12 @@ class InstrumentContext(object):
         self.moasic_analyser = np.deg2rad(0.4)  # radian, analyser mosaic
         self.deltad_d = 6e-4  # relative uncertainty of the lattice distance, given in [paper2]
         self.lattice_distance_pg002 = 3.35e-10  # m, lattice distance d of a PG crystal
-        self.analyser_segment = 1e-2  # m, the size of an analyser segment in 1D
-        self.distance_ms = 1.5  # m, monochromator-sample distance
+        self.an_seg = 1e-2  # m, the size of an analyser segment in 1D
+        self.distance_ms = 1.0  # m, monochromator-sample distance
         self.divergence_initial = np.deg2rad(1.6)  # initial divergence directly from the neutron guide
         self.sample_diameter = 1e-2  # m
         self.sample_height = 1e-2  # m
         self.detector_resolution = 1e-2  # m, the positional resolution of the position-sensitive detectors
-
-
-MASS_NEUTRON = 1.67492749804e-27  # kg
-PLANCKS_CONSTANT = 1.0545718e-34  # m2 kg / s
-CONVERSION_JOULE_TO_EV = 1.602176634e-19  # J / eV
 
 
 def wavelength_to_wavenumber(wavelength):
@@ -30,7 +33,7 @@ def wavelength_to_joule(wavelength):
 
 
 def wavelength_to_eV(wavelength):
-    return wavelength_to_joule(wavelength) / CONVERSION_JOULE_TO_EV
+    return wavelength_to_joule(wavelength) / CONVERSION_JOULE_PER_EV
 
 
 def points_distance(point1, point2):
@@ -58,12 +61,15 @@ def vector_bisector(vector1, vector2):
     return np.linalg.norm(vector1) * vector2 + np.linalg.norm(vector2) * vector1
 
 
-def wavenumber_to_2theta_bragg(instrument: InstrumentContext, wave_number, ordering=1):
-    # returns the scattering angle 2theta according to the Bragg's law 2 * d * sin(theta) = n * lambda
-    return 2.0 * np.arcsin(ordering * np.pi / (wave_number * instrument.lattice_distance_pg002))
-
-
-ZERO_TOL = 1e-6
+def points_bisecting_line(point1, point2):
+    x1, y1 = point1
+    x2, y2 = point2
+    x3, y3 = (x1 + x2) / 2.0, (y1 + y2) / 2.0
+    if abs(y1 - y2) < ZERO_TOL:
+        return 0, 1, -y3
+    else:
+        m = -(x2 - x1) / (y2 - y1)
+        return m, -1, y3 - m * x3
 
 
 def points_to_line(point1, point2):
@@ -91,7 +97,7 @@ def points_to_line(point1, point2):
 
 def points_to_vector(point1, point2):
     # gives the vector pointing from the point1 to point2 (direction important)
-    return [point2[0] - point1[0], point2[1] - point1[1]]
+    return np.array([point2[0] - point1[0], point2[1] - point1[1]])
 
 
 def parameters_to_line(slope, y_intersect=None):
@@ -100,6 +106,15 @@ def parameters_to_line(slope, y_intersect=None):
         return slope, -1., 0.
     else:
         return slope, -1., y_intersect
+
+
+def line_to_y(x, line_params):
+    a, b, c = line_params
+    print(a, b, c)
+    if abs(b) < ZERO_TOL:
+        raise RuntimeError("Given parameters define a line parallel to the y-axis.")
+    else:
+        return -(a * x + c) / b
 
 
 def lines_intersect(line1, line2):
@@ -115,26 +130,6 @@ def lines_intersect(line1, line2):
         return x1, x2
     else:
         raise RuntimeError("The line parameters provided are not valid. Try again.")
-
-
-def get_kf_vector(kf_norm, azimuthal, polar):
-    """
-    to calculate the full vector of k_f (the wave vector after scattering at the sample and before the analyser)
-    :param kf_norm: the norm of k_f
-    :param azimuthal: azimuthal angle theta, which is half of the scattering angle at the sample
-    :param polar: polar angle phi
-    :return: k_f vector with its components in all three dimensions
-    """
-    if not isinstance(kf_norm, float):
-        raise RuntimeError("Wrong type of kf given")
-    if not isinstance(azimuthal, float):
-        raise RuntimeError("Wrong type of azimuthal angle given")
-    if not isinstance(polar, float):
-        raise RuntimeError("Wrong type of polar angle given")
-
-    kf = np.array([np.cos(polar) * np.cos(azimuthal), np.cos(polar) * np.sin(azimuthal), np.sin(polar)])
-    kf *= kf_norm
-    return kf
 
 
 def angle_triangle(a, c, b=None):
@@ -179,3 +174,65 @@ def distance_point2line(point, line):
     x0, y0 = point
     a, b, c = line
     return np.abs((a * x0 + b * y0 + c) / np.linalg.norm([a, b]))
+
+
+def dispersion_signal(range_x, range_y, data_x, data_y, intensity):
+    print(range_x.shape, range_y.shape, data_x.shape, data_y.shape, intensity.shape)
+    inten_new_2d = np.full((range_y.shape[0], range_x.shape[0]), None)
+    x_index = np.searchsorted(range_x, data_x)
+    y_index = np.searchsorted(range_y, data_y)
+    if len(x_index.shape) == len(y_index.shape) == 2:
+        pass
+    elif len(x_index.shape) == 1 and len(y_index.shape) == 2:
+        x_index = np.array(list(map(lambda x: x_index, range(y_index.shape[0]))))
+    elif len(x_index.shape) == 2 and len(y_index.shape) == 1:
+        y_index = np.array(list(map(lambda x: np.full(x_index.shape[1], x), y_index)))
+    elif len(x_index.shape) == len(y_index.shape) == 1:
+        pass
+    else:
+        raise RuntimeError("Invalid shapes of x and y data given.")
+    # inten_new_2d[y_index, x_index] = 0
+    # np.add.at(inten_new_2d, (y_index, x_index), intensity)
+    inten_new_2d[y_index, x_index] = intensity
+
+    # x_index, y_index = np.meshgrid(x_index, y_index)
+    return inten_new_2d
+
+
+def data2range(data, number_points=None):
+    if number_points is None:
+        number_points = data.shape[0]
+    return np.linspace(np.min(data), np.max(data), num=number_points)
+
+
+def wavenumber_vector(wavenumber, azi_angle, pol_angle):
+    return wavenumber * np.array(
+        [np.cos(pol_angle) * np.cos(azi_angle), np.cos(pol_angle) * np.sin(azi_angle), np.sin(pol_angle)])
+
+
+def plotting_format(ax, grid=True):
+    plt.rcParams.update({'font.size': 15})
+    ax.tick_params(axis="x", direction="in")
+    ax.tick_params(axis="y", direction="in")
+    if grid is True:
+        ax.grid()
+
+
+def rotation_z(rot_angle, old_x, old_y):
+    new_x = old_x * np.cos(rot_angle) - old_y * np.sin(rot_angle)
+    new_y = old_x * np.sin(rot_angle) + old_y * np.cos(rot_angle)
+    return new_x, new_y
+
+
+def dirac_delta_approx(x, x0, resol):
+    """
+    approximates the delta dirac function with a Gaussian function with expectation value of x0 and with the limit that
+    the variance->0, where variance sigma = resol*x0
+
+    :param x: independet variable x
+    :param x0: expectation value x0
+    :param resol: relative variance, giving the variance sigma = resol*x0
+    :return: approximated delta dirac funtion by Gaussian
+    """
+    a = resol * x0
+    return np.exp(-((x - x0) / a) ** 2) / (abs(a) * np.sqrt(np.pi))

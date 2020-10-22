@@ -1,96 +1,114 @@
 import matplotlib.pyplot as plt
 import numpy as np
-
 from geometry_context import GeometryContext
-from helper import wavelength_to_eV, points_distance, vector_bisector, InstrumentContext, \
-    points_to_vector, \
-    get_kf_vector, points_to_slope_radian, unit_vector, vector_project_a2b, deg2min
+from helper import wavelength_to_eV, points_distance, vector_bisector, InstrumentContext, points_to_vector, \
+    points_to_slope_radian, unit_vector, vector_project_a2b, deg2min, points_bisecting_line, line_to_y, \
+    PLANCKS_CONSTANT, MASS_NEUTRON, CONVERSION_JOULE_PER_EV, data2range, dispersion_signal, rotation_z
+from magnon import magnon_energy, scatt_cross_qxqyde
+
+plt.rcParams.update({'font.size': 12})
 
 """
 [Paper1]: Demmel2014 http://dx.doi.org/10.1016/j.nima.2014.09.019
 [Paper2]: Keller2002 https://doi.org/10.1007/s003390101082
-
 """
-
 
 # Comment from Alex <3
 # line: ax + by + c = 0 -> (a, b, c)
+TERM_MAGNON = "magnon"
+TERM_SCATTERING = "scattering"
+TERM_CROSSSECTION = "crosssection"
 
 
 # def get_analyser_angular_spread(geo_ctx: GeometryContext, sample, analyser_point, focus_point):
-def get_angular_resolution_analyser(geo_ctx: GeometryContext, instrument: InstrumentContext, analyser_point):
+def monochromator_angular_spread(divergence_in, divergence_out, mosaic):
+    # For the formula see [Paper1]
+    # alpha_i, alpha_f, eta = divergence_in, divergence_out, mosaic
+    numerator = divergence_in ** 2 * divergence_out ** 2 + mosaic ** 2 * divergence_in ** 2 + \
+                mosaic ** 2 * divergence_out ** 2
+    denominator = 4 * mosaic ** 2 + divergence_in ** 2 + divergence_out ** 2
+    return np.sqrt(numerator / denominator)
+
+
+def angular_res_an(geo_ctx: GeometryContext, instrument: InstrumentContext, an_index):
     eta = instrument.moasic_analyser  # mosaic
     alpha_i, alpha_f = vertical_divergence_analyser(geo_ctx=geo_ctx, instrument=instrument,
-                                                    analyser_point=analyser_point)  # incoming and outgoing divergence
-    # See [Paper1]
+                                                    analyser_index=an_index)  # incoming and outgoing divergence
+    # For the formula see [Paper1]
     numerator = alpha_i ** 2 * alpha_f ** 2 + eta ** 2 * alpha_i ** 2 + eta ** 2 * alpha_f ** 2
     denominator = 4 * eta ** 2 + alpha_i ** 2 + alpha_f ** 2
 
     return np.sqrt(numerator / denominator)
 
 
-def get_uncertainty_kf(geo_ctx: GeometryContext, instrument: InstrumentContext, analyser_point_now,
-                       analyser_point_nearest, kf):
-    angular_uncertainty_analyser = get_angular_resolution_analyser(geo_ctx=geo_ctx, instrument=instrument,
-                                                                   analyser_point=analyser_point_now)
-    twotheta_analyser = geo_ctx.get_twotheta_analyser(analyser_point=analyser_point_now)
-    uncertainty_kf_bragg = kf * np.sqrt(np.sum(np.square(
-        [instrument.deltad_d, angular_uncertainty_analyser / np.tan(twotheta_analyser / 2.0)])))  # from Bragg's law
-    kf_nearest = geo_ctx.wavenumber_bragg(instrument=instrument, analyser_point=analyser_point_nearest)
-    uncertainty_kf_segment = abs(kf - kf_nearest)
+def uncert_kf(geo_ctx: GeometryContext, instrument: InstrumentContext, an_ind_now, an_ind_near):
+    kf_now = geo_ctx.wavenumbers_out[an_ind_now]
+    kf_near = geo_ctx.wavenumbers_out[an_ind_near]
+    angular_uncertainty_analyser = monochromator_angular_spread(
+        *vertical_divergence_analyser(geo_ctx=geo_ctx, instrument=instrument, analyser_index=an_ind_now),
+        mosaic=instrument.moasic_analyser)
+    twotheta_an = geo_ctx.an_2theta[an_ind_now]
+    uncertainty_kf_bragg = kf_now * np.linalg.norm(
+        [instrument.deltad_d, angular_uncertainty_analyser / np.tan(twotheta_an / 2.0)])  # from Bragg's law
+    uncertainty_kf_segment = abs(kf_now - kf_near)
+    # print(angular_uncertainty_analyser, np.rad2deg(twotheta_an), uncertainty_kf_bragg * 1e-10,
+    #       uncertainty_kf_segment * 1e-10)
     return max(uncertainty_kf_bragg, uncertainty_kf_segment)
 
 
-def get_uncertainty_phi(geo_ctx: GeometryContext, instrument: InstrumentContext, analyser_point):
-    divergence_out = \
-        vertical_divergence_analyser(geo_ctx=geo_ctx, instrument=instrument, analyser_point=analyser_point)[1]
+def uncert_pol(geo_ctx: GeometryContext, instrument: InstrumentContext, an_index):
+    divergence = angular_res_an(geo_ctx=geo_ctx, instrument=instrument, an_index=an_index)
     # the uncertainty of the polar angle is given by the angular resolution at the analyser
     # return get_angular_resolution_analyser(geo_ctx=geo_ctx, instrument=instrument, analyser_point=analyser_point)
-    return divergence_out
+    return divergence
 
 
-def get_uncertainty_theta(geo_ctx: GeometryContext, instrument: InstrumentContext, analyser_point):
+def uncert_azi(geo_ctx: GeometryContext, instrument: InstrumentContext, an_index):
+    an_point = (geo_ctx.analyser_points[0][an_index], geo_ctx.analyser_points[1][an_index])
     # sa: sample-analyser; af: analyser-focus
-    distance_sa = points_distance(point1=geo_ctx.sample_point, point2=analyser_point)
-    distance_af = points_distance(point1=analyser_point, point2=geo_ctx.focus_point)
-    uncertainty_azimuthal_sa = 2.0 * np.arctan(
-        (instrument.analyser_segment + instrument.sample_diameter) / (2.0 * distance_sa))
-    uncertainty_azimuthal_af = 2.0 * np.arctan((instrument.analyser_segment + geo_ctx.focus_size) / (2.0 * distance_af))
-    return min(uncertainty_azimuthal_sa, uncertainty_azimuthal_af)
+    distance_sa = points_distance(point1=geo_ctx.sample_point, point2=an_point)
+    distance_af = points_distance(point1=an_point, point2=geo_ctx.foc_point)
+    uncert_azi_sa = 2.0 * np.arctan((instrument.an_seg + instrument.sample_diameter) / (2.0 * distance_sa))
+    uncert_azi_af = 2.0 * np.arctan((instrument.an_seg + geo_ctx.foc_size) / (2.0 * distance_af))
+    return min(uncert_azi_sa, uncert_azi_af)
 
 
-def get_relative_uncertainty_energy(geo_ctx: GeometryContext, instrument: InstrumentContext, analyser_point,
-                                    nearest_point):
-    kf = geo_ctx.wavenumber_bragg(instrument=instrument, analyser_point=analyser_point)  # outgoing wave number
-    delta_kf = get_uncertainty_kf(geo_ctx, instrument, analyser_point_now=analyser_point,
-                                  analyser_point_nearest=nearest_point, kf=kf)
-    return 2. * delta_kf / kf
+def de_of_e_from_an(geo_ctx: GeometryContext, instrument: InstrumentContext, an_ind_now, an_ind_near):
+    # factor_polar= spread_factor_detector(geo_ctx=geo_ctx, instrument=instrument,
+    #                                                       analyser_now=analyser_point,
+    #                                                       analyser_nearest=nearest_point, index_now=index)[0]
+    kf_now = geo_ctx.wavenumbers_out[an_ind_now]
+    delta_kf = uncert_kf(geo_ctx, instrument, an_ind_now=an_ind_now, an_ind_near=an_ind_near) * spread_factor_detector(
+        geo_ctx=geo_ctx, instrument=instrument, index_now=an_ind_now, index_nearest=an_ind_near)[0]
+    return 2. * delta_kf / kf_now
 
 
 # def get_divergence(sample, analyser_point, focus, sample_size, focus_size):
-def vertical_divergence_analyser(geo_ctx: GeometryContext, instrument: InstrumentContext, analyser_point):
+def vertical_divergence_analyser(geo_ctx: GeometryContext, instrument: InstrumentContext, analyser_index):
     # sa: sample-analyser; af: analyser-focus
+    analyser_point = (geo_ctx.analyser_points[0][analyser_index], geo_ctx.analyser_points[1][analyser_index])
     vector_sa = points_to_vector(point1=geo_ctx.sample_point, point2=analyser_point)
-    vector_af = points_to_vector(point1=analyser_point, point2=geo_ctx.focus_point)
+    vector_af = points_to_vector(point1=analyser_point, point2=geo_ctx.foc_point)
     vector_tangential = vector_bisector(vector_sa, vector_af)
-    segment_analyser = unit_vector(vector_tangential) * instrument.analyser_segment
+    segment_analyser = unit_vector(vector_tangential) * instrument.an_seg
     analyser_incoming_projection = vector_project_a2b(segment_analyser, vector_sa)
     analyser_incoming_rejection = segment_analyser - analyser_incoming_projection
     analyser_outgoing_projection = vector_project_a2b(segment_analyser, vector_af)
     analyser_outgoing_rejection = segment_analyser - analyser_outgoing_projection
 
-    divergence_in = 2.0 * np.arctan((instrument.sample_height * abs(np.sin(
-        points_to_slope_radian(point1=geo_ctx.sample_point, point2=analyser_point))) + np.linalg.norm(
+    divergence_in = 2 * np.arctan((instrument.sample_height * abs(
+        np.cos(points_to_slope_radian(point1=geo_ctx.sample_point, point2=analyser_point))) + np.linalg.norm(
         analyser_incoming_rejection)) / (2.0 * np.linalg.norm(vector_sa)))
-    divergence_out = 2.0 * np.arctan((geo_ctx.focus_size * abs(np.sin(
-        points_to_slope_radian(point1=analyser_point, point2=geo_ctx.focus_point))) + np.linalg.norm(
+    divergence_out = 2 * np.arctan((geo_ctx.foc_size * abs(
+        np.sin(points_to_slope_radian(point1=analyser_point, point2=geo_ctx.foc_point))) + np.linalg.norm(
         analyser_outgoing_rejection)) / (2.0 * np.linalg.norm(vector_af)))
     # divergence_in = instrument.sample_size / distance_sa
     # divergence_out = geo_ctx.focus_size / distance_af
+    # print(divergence_in, divergence_out)
     return divergence_in, divergence_out
 
 
-def get_spread_from_detector(analyser_point, focus, detector, angular_spread_analyser, size_focus):
+def spread_effect_detector(analyser_point, focus, detector, angular_spread_analyser, size_focus):
     if len(analyser_point) != 2:
         return RuntimeError("Invalid analyser point given {}".format(analyser_point))
     if len(focus) != 2:
@@ -102,86 +120,27 @@ def get_spread_from_detector(analyser_point, focus, detector, angular_spread_ana
     distance_ad = points_distance(analyser_point, detector)
     spread_focus = np.sqrt(2 * distance_af ** 2 * (1 - np.cos(angular_spread_analyser)))
     if spread_focus > size_focus:
-        spread_detector = size_focus * distance_ad / distance_af
+        spread_factor = size_focus * distance_ad / distance_af
     else:
-        spread_detector = np.sqrt(2 * distance_ad ** 2 * (1 - np.cos(angular_spread_analyser)))
-    return spread_detector
+        spread_factor = np.sqrt(2 * distance_ad ** 2 * (1 - np.cos(angular_spread_analyser)))
+    return spread_factor
 
 
-def get_resolution_qxy(geo_ctx: GeometryContext, instrument: InstrumentContext, kf, phi, theta, analyser_point_now,
-                       analyser_point_nearest, qxy, ki=None):
-    if ki is None:
-        ki = kf
-    delta_kf = get_uncertainty_kf(geo_ctx, instrument=instrument, analyser_point_now=analyser_point_now,
-                                  analyser_point_nearest=analyser_point_nearest, kf=kf)
-    delta_phi = get_uncertainty_phi(geo_ctx, instrument=instrument, analyser_point=analyser_point_now)
+def kf_resol_mcstas(geo_ctx: GeometryContext, instrument: InstrumentContext, index_now, index_nearest):
+    factor_polar, factor_azimuth = spread_factor_detector(geo_ctx=geo_ctx, instrument=instrument, index_now=index_now,
+                                                          index_nearest=index_nearest)
+    # factor_polar, factor_azimuth = 1, 1
+    dkf = uncert_kf(geo_ctx, instrument=instrument, an_ind_now=index_now,
+                    an_ind_near=index_nearest) * factor_polar
+    dphi = uncert_pol(geo_ctx, instrument=instrument, an_index=index_now) * factor_polar
     # delta_phi = np.sqrt(np.sum(np.square([divergence_analyser_point(geo_ctx, analyser_point=analyser_point)])))
-    dtheta_sample = np.sqrt(np.sum(np.square(
-        [vertical_divergence_analyser(geo_ctx=geo_ctx, instrument=instrument, analyser_point=analyser_point_now)])))
-
-    qxy_kf = np.cos(phi) * (kf * np.cos(phi) - ki * np.cos(theta)) / qxy
-    qxy_phi = -kf * np.sin(phi) * (kf * np.cos(phi) - ki * np.cos(theta)) / qxy
-    qxy_theta = ki * kf * np.cos(phi) * np.sin(theta) / qxy
-    delta_qxy = np.sqrt(np.sum(np.square([qxy_kf * delta_kf, qxy_phi * delta_phi, qxy_theta * dtheta_sample])))
-    return delta_qxy
-
-
-def get_dq_mcstas_coordinate(geo_ctx: GeometryContext, instrument: InstrumentContext, kf, analyser_point_now,
-                             analyser_point_nearest, index):
-    factor_polar, factor_azimuth = spread_factor_detector(geo_ctx=geo_ctx, instrument=instrument,
-                                                          analyser_now=analyser_point_now,
-                                                          analyser_nearest=analyser_point_nearest, index_now=index)
-    dkf = get_uncertainty_kf(geo_ctx, instrument=instrument, analyser_point_now=analyser_point_now,
-                             analyser_point_nearest=analyser_point_nearest, kf=kf) * factor_polar
-    dphi = get_uncertainty_phi(geo_ctx, instrument=instrument, analyser_point=analyser_point_now) * factor_polar
-    # delta_phi = np.sqrt(np.sum(np.square([divergence_analyser_point(geo_ctx, analyser_point=analyser_point)])))
-    dtheta = get_uncertainty_theta(geo_ctx=geo_ctx, instrument=instrument,
-                                   analyser_point=analyser_point_now) * factor_azimuth
-
-    dqx = kf * np.tan(dtheta)
-    dqy = kf * np.tan(dphi)
-    dqz = dkf
-    # print(np.rad2deg(np.arctan(analyser_point_now[1] / analyser_point_now[0])), np.rad2deg(dtheta), kf * 1e-10,
-    #       dqx * 1e-10)
-    return [dqx, dqy, dqz]
-
-
-def get_resolution_qy(geo_ctx: GeometryContext, instrument: InstrumentContext, kf, phi, theta, analyser_point_now,
-                      analyser_point_nearest, qxy, ki=None):
-    delta_kf = get_uncertainty_kf(geo_ctx, instrument=instrument, analyser_point_now=analyser_point_now,
-                                  analyser_point_nearest=analyser_point_nearest, kf=kf)
-    delta_phi = get_uncertainty_phi(geo_ctx, instrument=instrument, analyser_point=analyser_point_now)
-    # delta_phi = np.sqrt(np.sum(np.square([divergence_analyser_point(geo_ctx, analyser_point=analyser_point)])))
-    dtheta_sample = np.sqrt(np.sum(np.square(
-        [vertical_divergence_analyser(geo_ctx=geo_ctx, instrument=instrument, analyser_point=analyser_point_now)])))
-
-    qy_kf = np.cos(phi) * np.sin(theta)
-    qy_phi = -kf * np.sin(phi) * np.sin(theta)
-    qy_theta = kf * np.cos(phi) * np.cos(theta)
-    delta_qy = np.sqrt(np.sum(np.square([qy_kf * delta_kf, qy_phi * delta_phi, qy_theta * dtheta_sample])))
-    return delta_qy
-
-
-def get_resolution_qz(geo_ctx: GeometryContext, instrument: InstrumentContext, kf, phi, analyser_point_now,
-                      analyser_point_nearest):
-    delta_kf = get_uncertainty_kf(geo_ctx, instrument=instrument, analyser_point_now=analyser_point_now,
-                                  analyser_point_nearest=analyser_point_nearest, kf=kf)
-    delta_phi = get_uncertainty_phi(geo_ctx, instrument=instrument, analyser_point=analyser_point_now)
-
-    qz_kf = np.sin(phi)
-    qz_phi = kf * np.cos(phi)
-    delta_qz = np.sqrt(np.sum(np.square([qz_kf * delta_kf, qz_phi * delta_phi])))
-    return delta_qz
-
-
-def get_qxy(kf_vector):
-    ki_vector = np.array([np.linalg.norm(kf_vector), 0, 0])  # k_i is along x-axis and has the same magnitude as k_f
-    q_vector = kf_vector - ki_vector
-    return np.linalg.norm(q_vector[:2])
-
-
-def get_qz(kf, polar_angle):
-    return kf * np.sin(polar_angle)
+    dtheta = uncert_azi(geo_ctx=geo_ctx, instrument=instrument,
+                        an_index=index_now) * factor_azimuth
+    kf = geo_ctx.wavenumbers_out[index_now]
+    dkf_x = kf * np.tan(dtheta)
+    dkf_y = kf * np.tan(dphi)
+    dkf_z = dkf
+    return [dkf_x, dkf_y, dkf_z]
 
 
 # to compare the analyser generated by the two different methods
@@ -199,30 +158,30 @@ def plot_analyser_comparison(points_x, points_y, points_analyser_x, points_analy
     plt.xlabel("x axis (m)")
     plt.ylabel("y axis (m)")
     plt.plot(*geometryctx.sample_point, "ro")
-    plt.plot(*geometryctx.focus_point, "ro")
+    plt.plot(*geometryctx.foc_point, "ro")
     plt.text(x=0, y=-0.05, s="Sample")
     plt.text(x=0.1, y=-0.4, s="Focus")
+
+    plt.plot([geometryctx.sample_point[0], geometryctx.foc_point[0]],
+             [geometryctx.sample_point[1], geometryctx.foc_point[1]])
+    bisecting_x = np.array([0.75, 1])
+    plt.plot(bisecting_x, line_to_y(bisecting_x, points_bisecting_line(point1=geometryctx.sample_point,
+                                                                       point2=geometryctx.foc_point)))
+    plt.axis("equal")
+
     plt.savefig("Geometry_Comparison.pdf", bbox_inches='tight')
     plt.close(10)
 
 
-def coordinate_transformation(theta, phi, vector):
-    theta = -(np.pi / 2.0 + theta)
-    phi = -(np.pi / 2.0 - phi)
-    matrix_x = np.array([[1, 0, 0], [0, np.cos(phi), -np.sin(phi)], [0, np.sin(phi), np.cos(phi)]])
-    matrix_z = np.array([[np.cos(theta), -np.sin(theta), 0], [np.sin(theta), np.cos(theta), 0], [0, 0, 1]])
-    return np.dot(matrix_x, np.dot(matrix_z, vector))
-
-
-def plot_whole_geometry(geo_ctx: GeometryContext, instrument: InstrumentContext):
-    def plot_for_analyser_point(instrument: InstrumentContext, analyser_point, nearest_point, detector_point):
+def plot_geometry(geo_ctx: GeometryContext, instrument: InstrumentContext):
+    def plot_for_analyser_point(geo_ctx: GeometryContext, instrument: InstrumentContext, index_now, index_nearest):
         energy_ev = wavelength_to_eV(
-            wavelength=geo_ctx.wavelength_bragg(instrument=instrument, analyser_point=analyser_point))
-        e_resolution_ev = get_relative_uncertainty_energy(geo_ctx=geo_ctx, analyser_point=analyser_point,
-                                                          nearest_point=nearest_point,
-                                                          instrument=instrument)
-        e_resolution_ev *= energy_ev
-
+            wavelength=geo_ctx.wavelength_bragg(instrument=instrument, index=index_now))
+        e_res_ev = de_of_e_from_an(geo_ctx=geo_ctx, instrument=instrument, an_ind_now=index_now,
+                                   an_ind_near=index_nearest)
+        e_res_ev *= energy_ev
+        analyser_point = (geo_ctx.analyser_points[0][index_now], geo_ctx.analyser_points[1][index_now])
+        detector_point = (geo_ctx.detector_points[0][index_now], geo_ctx.detector_points[1][index_now])
         line_sp_plot = ([geo_ctx.sample_point[0], analyser_point[0]], [geo_ctx.sample_point[1], analyser_point[1]])
         line_pf_plot = ([analyser_point[0], detector_point[0]], [analyser_point[1], detector_point[1]])
         plt.plot(*line_sp_plot, color='#17becf')
@@ -234,8 +193,12 @@ def plot_whole_geometry(geo_ctx: GeometryContext, instrument: InstrumentContext)
         plt.plot(*line_pf_plot, color='#17becf')
 
         plt.plot(analyser_point[0], analyser_point[1], "ko")
-        plt.text(x=-analyser_point[0] - 0.35, y=analyser_point[1], s="{:5.2f}".format(energy_ev * 1e3))
-        plt.text(x=analyser_point[0] + 0.1, y=analyser_point[1], s="{:5.2f}".format(e_resolution_ev * 1e6))
+        plt.text(x=-analyser_point[0] * 1.1 - 0.5, y=analyser_point[1] * 1.05 + 0.05,
+                 s="{:5.2f}".format(energy_ev * 1e3))
+        plt.text(x=analyser_point[0] * 1.1, y=analyser_point[1] * 1.05 + 0.05,
+                 s="{:5.2f}".format(e_res_ev * 1e6))
+
+    plt.rcParams.update({'font.size': 12})
 
     # first plot the analyser on both sides
     plt.plot(geo_ctx.analyser_points[0], geo_ctx.analyser_points[1], color='#1f77b4', linewidth=5)
@@ -243,184 +206,46 @@ def plot_whole_geometry(geo_ctx: GeometryContext, instrument: InstrumentContext)
     plt.xlabel("Radial axis (m)")
     plt.ylabel("Vertical axis (m)")
 
-    plt.text(x=-0.7, y=0.75, s=r"$E$(meV)")
-    plt.text(x=0.5, y=0.75, s=r"$\Delta E$($\mu$eV)")
+    plt.text(x=-2.5, y=0.5, s=r"$E$(meV)")
+    plt.text(x=2, y=0.5, s=r"$\hbar\omega$($\mu$eV)")
 
-    first_point_analyser = [geo_ctx.analyser_points[0][0], geo_ctx.analyser_points[1][0]]
-    first_point_detector = [geo_ctx.detector_points[0][0], geo_ctx.detector_points[1][0]]
+    plt.text(-3, -3.1, "Wavenumber covered by the analyser " + r"$k_f \in$ [{:.2f}, {:.2f}]".format(
+        np.min(geometryctx.wavenumbers_out) * 1e-10, np.max(geometryctx.wavenumbers_out) * 1e-10) + r" $\AA^{-1}$")
 
-    last_point_analyser = [geo_ctx.analyser_points[0][-1], geo_ctx.analyser_points[1][-1]]
-    last_point_detector = [geo_ctx.detector_points[0][-1], geo_ctx.detector_points[1][-1]]
+    plot_for_analyser_point(geo_ctx=geo_ctx, instrument=instrument, index_now=0, index_nearest=1)
+    plot_for_analyser_point(geo_ctx=geo_ctx, instrument=instrument, index_now=-1, index_nearest=-2)
 
-    plot_for_analyser_point(instrument=instrument, analyser_point=first_point_analyser,
-                            detector_point=first_point_detector,
-                            nearest_point=[geo_ctx.analyser_points[0][1], geo_ctx.analyser_points[1][1]])
-    plot_for_analyser_point(instrument=instrument, analyser_point=last_point_analyser,
-                            detector_point=last_point_detector,
-                            nearest_point=[geo_ctx.analyser_points[0][-2], geo_ctx.analyser_points[1][-2]])
-
-    index_largest_energy = np.argmax(np.array(list(
-        map(lambda x, y: geo_ctx.wavenumber_bragg(instrument=instrument, analyser_point=[x, y]),
-            geo_ctx.analyser_points[0], geo_ctx.analyser_points[1]))))
-    plot_for_analyser_point(instrument=instrument, analyser_point=[geo_ctx.analyser_points[0][index_largest_energy],
-                                                                   geo_ctx.analyser_points[1][index_largest_energy]],
-                            detector_point=[geo_ctx.detector_points[0][index_largest_energy],
-                                            geo_ctx.detector_points[1][index_largest_energy]],
-                            nearest_point=[geo_ctx.analyser_points[0][index_largest_energy + 1],
-                                           geo_ctx.analyser_points[1][index_largest_energy + 1]])
+    index_largest_energy = np.argmax(geo_ctx.wavenumbers_out)
+    plot_for_analyser_point(geo_ctx=geo_ctx, instrument=instrument, index_now=index_largest_energy,
+                            index_nearest=index_largest_energy + 1)
 
     # mark the position of the sample and focus, and plot the detector
     plt.plot(*geo_ctx.sample_point, "ro")
-    plt.text(x=-0.275, y=-0.25, s="Sample", fontsize=15)
-    plt.plot(*geo_ctx.focus_point, "ro", alpha=0.5)
-    plt.text(x=geo_ctx.focus_point[0] + 0.1, y=geo_ctx.focus_point[1] - 0.1, s="Focus", fontsize=15)
-    plt.plot(*geo_ctx.detector_points, color='#8c564b')
+    plt.text(x=-0.065, y=-1, s="Sample", rotation=90)
+    plt.plot(*geo_ctx.foc_point, "ro", alpha=0.5)
+    plt.text(x=geo_ctx.foc_point[0] - 0.8, y=geo_ctx.foc_point[1] - 0.1, s="Focus")
+    plt.plot(*geo_ctx.detector_points, '.', color='#8c564b')
+    plt.plot(-geo_ctx.detector_points[0], geo_ctx.detector_points[1], '.', color='#8c564b')
 
-    plt.xlim(-1.8, 1.8)
-
+    # plt.xlim(-1.8, 1.8)
+    plt.axis("equal")
     plt.tight_layout()
-    plt.savefig(geo_ctx.filename_geometry + '.pdf', bbox_inches='tight')
-    plt.savefig(geo_ctx.filename_geometry + '.png', bbox_inches='tight')
+    plt.savefig(geo_ctx.filename_geo + '.pdf', bbox_inches='tight')
+    plt.savefig(geo_ctx.filename_geo + '.png', bbox_inches='tight')
     plt.close(1)
-    print("{:s} plotted.".format(geo_ctx.filename_geometry))
-
-
-# def get_resolution_robbewley(geo_ctx: GeometryContext, instrument: InstrumentContext, all_qxy, all_qz):
-#     analyser_x, analyser_y = geo_ctx.analyser_points
-#     detector_x, detector_y = geo_ctx.detector_points
-#     if analyser_x.shape[0] != detector_x.shape[0]:
-#         raise RuntimeError("Analyser and detector points have different sizes, {:d}, {:d}".format(analyser_x.shape[0],
-#                                                                                                   detector_x.shape[0]))
-#     all_delta_qxy = []
-#     all_delta_qz = []
-#     for i in range(analyser_x.shape[0]):
-#         analyser_point = np.array([analyser_x[i], analyser_y[i]])
-#         detector_point = np.array([detector_x[i], detector_y[i]])
-#         distance_ad = np.linalg.norm(analyser_point - detector_point)
-#
-#         dx = np.sqrt((np.tan(2 * instrument.moasic_analyser) * distance_ad) ** 2 + instrument.analyser_segment ** 2)
-#         x = detector_x[i]
-#         thi = abs(dx / x)
-#         dtheta = abs(instrument.analyser_segment / abs(analyser_point[0] - geo_ctx.sample_point[0]))
-#         for j in range(len(azimuthal_angles)):
-#             k = i * len(azimuthal_angles) + j
-#             try:
-#                 if j == 0:
-#                     dqxy = all_qxy[k] - all_qxy[k + 1]
-#                 else:
-#                     dqxy = all_qxy[k] - all_qxy[k - 1]
-#                 dqxy = abs(dqxy)
-#                 delta_qxy = dqxy * thi / dtheta
-#                 all_delta_qxy.append(delta_qxy)
-#             except IndexError:
-#                 print(i, j, k, analyser_x.shape[0], len(azimuthal_angles))
-#
-#         vector_ad = points_to_vector(analyser_point, detector_point)
-#         theta0 = np.arctan(abs(vector_ad[1] / vector_ad[0]))
-#         dxy = dx / np.sin(theta0)
-#         x_spread = abs(dxy)
-#         if i == 0:
-#             next_point = np.array([detector_x[i + 1], detector_y[i + 1]])
-#             x_point = abs(detector_point[0] - next_point[0])
-#             dqz = all_qz[i] - all_qz[i + 1]
-#
-#         else:
-#             last_point = np.array([detector_x[i - 1], detector_y[i - 1]])
-#             x_point = abs(detector_point[0] - last_point[0])
-#             dqz = all_qz[i] - all_qz[i - 1]
-#         dqz = abs(dqz)
-#         delta_qz = dqz * x_spread / x_point
-#         all_delta_qz.append(delta_qz)
-#     # print(len(all_delta_qxy), len(all_delta_qz))
-#     return np.array(all_delta_qxy), np.array(all_delta_qz)
-
-
-def plot_resolution(geo_ctx: GeometryContext, all_qxy, all_dqxy, all_qz, all_dqz):
-    # plot the horizontal component of the q-resolution calculated by us
-    plt.figure(2)
-    plt.plot(all_qxy * 1e-10, all_dqxy * 1e-10, '.')
-    plt.xlabel(r"$Q_{xy}$ (Angstrom -1)")
-    plt.ylabel(r"$\Delta Q_{xy}$ (Angstrom -1)")
-    plt.title("Q resolution - horizontal")
-    plt.grid()
-    plt.savefig(geo_ctx.filename_horizontal, bbox_inches='tight')
-    plt.close(2)
-
-    # plot the vertical component of the q-resolution calculated by us
-    plt.figure(3)
-    plt.plot(all_qz * 1e-10, all_dqz * 1e-10, '.')
-    plt.xlabel(r"$Q_{z}$ (Angstrom -1)")
-    plt.ylabel(r"$\Delta Q_{z}$ (Angstrom -1)")
-    plt.title("Q resolution - vertical")
-    plt.grid()
-    plt.savefig(geo_ctx.filename_vertical, bbox_inches='tight')
-    plt.close(3)
-
-
-def plot_resolution_comparison(all_qxy, all_dqxy, all_delta_qxy_rob, all_qz, all_dqz, all_delta_qz_rob):
-    # compare the horizontal component of the q-resolution calculated by us and by Rob Bewley
-    plt.figure(4)
-    plt.subplot(121)
-    plt.plot(all_qxy * 1e-10, all_dqxy * 1e-10, '.')
-    plt.xlabel(r"$Q_{xy}$ (Angstrom -1)")
-    plt.ylabel(r"$\Delta Q_{xy}$ (Angstrom -1)")
-    plt.grid()
-    plt.subplot(122)
-    plt.plot(all_qxy * 1e-10, all_delta_qxy_rob * 1e-10, '.')
-    plt.xlabel(r"$Q_{xy}$ (Angstrom -1)")
-    plt.grid()
-    plt.tight_layout()
-    plt.savefig("Comparison_Horizontal.pdf", bbox_inches='tight')
-    plt.close(4)
-
-    # compare the vertical component of the q-resolution calculated by us and by Rob Bewley
-    plt.figure(5)
-    plt.subplot(121)
-    plt.plot(all_qz * 1e-10, all_dqz * 1e-10, '.')
-    plt.xlabel(r"$Q_{z}$ (Angstrom -1)")
-    plt.ylabel(r"$\Delta Q_{z}$ (Angstrom -1)")
-    plt.grid()
-    plt.subplot(122)
-    plt.plot(all_qz * 1e-10, all_delta_qz_rob * 1e-10, '.')
-    plt.xlabel(r"$Q_{z}$ (Angstrom -1)")
-    plt.grid()
-    plt.tight_layout()
-    plt.savefig("Comparison_Vertical.pdf", bbox_inches='tight')
-    plt.close(5)
+    print("{:s} plotted.".format(geo_ctx.filename_geo))
 
 
 def write_mcstas(geo_ctx: GeometryContext, instrument: InstrumentContext):
-    f = open(geo_ctx.mcstas_filename, 'w+')
-    value_width_z = instrument.analyser_segment
-    value_height_y = instrument.analyser_segment
+    f = open(geo_ctx.filename_mcstas, 'w+')
+    value_width_z = instrument.an_seg
+    value_height_y = instrument.an_seg
     value_mosaic_horizontal = deg2min(np.rad2deg(instrument.moasic_analyser))
     value_mosaic_vertical = deg2min(np.rad2deg(instrument.moasic_analyser))
     value_lattice_distance = instrument.lattice_distance_pg002 * 1e10  # it is in angstrom for McStas
     value_position_y = geo_ctx.analyser_points[1]
     value_position_z = geo_ctx.analyser_points[0]
-    value_rotation_x = -np.rad2deg(geo_ctx.mcstas_rotation_radian)
-
-    # for j, azimuthal_angle in enumerate(geo_ctx.azimuthal_angles):
-    #     arm_sa_name = "{}{}".format(geo_ctx.arm_sa_name_prefix, j)
-    #     string_arm_sa1 = "COMPONENT {} = Arm()\n".format(arm_sa_name)
-    #     string_arm_sa2 = 'AT (0, 0, 0) RELATIVE {}\n'.format(geo_ctx.arm_sa_reference)
-    #     string_arm_sa3 = 'ROTATED (0, {}, 0) RELATIVE {}\n\n'.format(np.rad2deg(azimuthal_angle),
-    #                                                                  geo_ctx.arm_sa_reference)
-    #     string_arm_sa = string_arm_sa1 + string_arm_sa2 + string_arm_sa3
-    #     f.write(string_arm_sa)
-    #     for i in range(geo_ctx.analyser_points[0].shape[0]):
-    #         string_an1 = 'COMPONENT {}{}_{} = {}({} = {}, {} = {}, {} = {}, {} = {}, {} = {})\n'.format(
-    #             geo_ctx.component_name_prefix, j, i, geo_ctx.component_type, geo_ctx.parameter_width_z, value_width_z,
-    #             geo_ctx.parameter_height_y, value_height_y, geo_ctx.parameter_mosaic_horizontal,
-    #             value_mosaic_horizontal,
-    #             geo_ctx.parameter_mosaic_vertical, value_mosaic_vertical, geo_ctx.parameter_lattice_distance,
-    #             value_lattice_distance)
-    #         string_an2 = 'AT (0, {}, {}) RELATIVE {}\n'.format(value_position_y[i], value_position_z[i], arm_sa_name)
-    #         string_an3 = 'ROTATED ({}, 0, 90) RELATIVE {}\n'.format(value_rotation_x[i], arm_sa_name)
-    #         # string_an3 = 'ROTATED (90, 90, 0) RELATIVE {}\n'.format(geo_ctx.component_reference)
-    #         string_an4 = 'GROUP {}\n\n'.format(geo_ctx.group_name)
-    #         string_analyser = string_an1 + string_an2 + string_an3 + string_an4
-    #         f.write(string_analyser)
+    value_rotation_x = -np.rad2deg(geo_ctx.mcstas_rotation_rad)
 
     # This is the code for analyser segments at one azimuthal angle without arms
     for i in range(geo_ctx.analyser_points[0].shape[0]):
@@ -441,181 +266,168 @@ def write_mcstas(geo_ctx: GeometryContext, instrument: InstrumentContext):
     pass
 
 
-def plot_resolution_polarangles(geo_ctx: GeometryContext, polar_angles, all_dqx_m, all_dqy_m, all_dqz_m, all_kf):
+# def plot_resolution_polarangles(geo_ctx: GeometryContext, polar_angles, all_dqx_m, all_dqy_m, all_dqz_m, all_kf):
+#     plt.rcParams.update({'font.size': 12})
+#     polar_angles = np.rad2deg(polar_angles)
+#
+#     def forward(x):
+#         return np.interp(x, polar_angles, all_kf * 1e-10)
+#
+#     def inverse(x):
+#         kf_sort_indeces = np.argsort(all_kf)
+#         kf_sort = all_kf[kf_sort_indeces] * 1e-10
+#         polar_angles_sort = polar_angles[kf_sort_indeces]
+#         return np.interp(x, kf_sort, polar_angles_sort)
+#
+#     fig, ax = plt.subplots(constrained_layout=True)
+#     ax.plot(polar_angles, all_dqx_m * 1e-10, color="blue")
+#     ax.plot(polar_angles, all_dqy_m * 1e-10, color="red")
+#     ax.plot(polar_angles, all_dqz_m * 1e-10, color="gold")
+#     ax.set_xlabel(r"Polar angle $\varphi$ (degree)")
+#     ax.set_ylabel(r"$\Delta k_f$ (angstrom$^{-1}$)")
+#     ax.grid()
+#     ax.legend(("x: horizontal", "y: vertical", r"z: along $k_f$"))
+#     ax.tick_params(axis="x", direction="in")
+#     ax.tick_params(axis="y", direction="in")
+#
+#     ax2 = ax.twinx()  # instantiate a second axes that shares the same x-axis
+#     colour_ax2 = "green"
+#     ax2.plot(polar_angles, all_dqz_m / all_kf * 1e2, '1', color=colour_ax2)
+#     ax2.tick_params(axis="y", direction="in")
+#     ax2.set_ylabel(r"$\dfrac{\Delta k_f}{k_f}$ * 100%", color=colour_ax2)
+#     ax2.tick_params(axis='y', labelcolor=colour_ax2)
+#
+#     secax = ax.secondary_xaxis('top', functions=(forward, inverse))
+#     secax.set_xlabel(r' Outgoing wavenumber $k_f$ (angstrom$^{-1}$)')
+#     secax.tick_params(axis="x", direction="in", labelsize=10)
+#
+#     ax.set_title('Q-resolution of the secondary spectrometer')
+#     filename = geo_ctx.filename_polarangle
+#     plt.savefig(filename + '.pdf', bbox_inches='tight')
+#     plt.savefig(filename + '.png', bbox_inches='tight')
+#     print("{:s} plotted.".format(filename))
+
+
+def plot_resolution_kf(geo_ctx: GeometryContext, all_dqx_m, all_dqy_m, all_dqz_m):
+    all_kf = geo_ctx.wavenumbers_out
     plt.rcParams.update({'font.size': 12})
-    polar_angles = np.rad2deg(polar_angles)
-
-    def forward(x):
-        return np.interp(x, polar_angles, all_kf * 1e-10)
-
-    def inverse(x):
-        kf_sort_indeces = np.argsort(all_kf)
-        kf_sort = all_kf[kf_sort_indeces] * 1e-10
-        polar_angles_sort = polar_angles[kf_sort_indeces]
-        return np.interp(x, kf_sort, polar_angles_sort)
+    max_index = np.argmax(all_kf)
 
     fig, ax = plt.subplots(constrained_layout=True)
-    ax.plot(polar_angles, all_dqx_m * 1e-10, color="blue")
-    ax.plot(polar_angles, all_dqy_m * 1e-10, color="red")
-    ax.plot(polar_angles, all_dqz_m * 1e-10, color="gold")
-    ax.set_xlabel(r"Polar angle $\varphi$ (degree)")
-    ax.set_ylabel(r"$\Delta k_f$ (angstrom$^{-1}$)")
+    ax.plot(all_kf[max_index:] * 1e-10, all_dqx_m[max_index:] * 1e-10, color="blue")
+    ax.plot(all_kf[max_index:] * 1e-10, all_dqy_m[max_index:] * 1e-10, color="red")
+    ax.plot(all_kf[max_index:] * 1e-10, all_dqz_m[max_index:] * 1e-10, color="gold")
+    ax.set_xlabel(r'Outgoing wavenumber $|k_f|$ ($\AA^{-1}$)')
+    ax.set_ylabel(r"Component uncertainties $\Delta k_{f,\alpha}$ ($\AA^{-1}$), $\alpha=x,y,z$")
     ax.grid()
     ax.legend(("x: horizontal", "y: vertical", r"z: along $k_f$"))
     ax.tick_params(axis="x", direction="in")
     ax.tick_params(axis="y", direction="in")
+    # ax.fill_between(x=all_kf[:max_index] * 1e-10, y1=all_dqx_m[:max_index] * 1e-10 - 1e-3,
+    #                 y2=all_dqx_m[:max_index] * 1e-10 + 1e-3, facecolor="blue", alpha=0.3)
+    # ax.fill_between(x=all_kf[:max_index] * 1e-10, y1=all_dqy_m[:max_index] * 1e-10 - 1e-3,
+    #                 y2=all_dqy_m[:max_index] * 1e-10 + 1e-3, facecolor="red", alpha=0.3)
+    # ax.fill_between(x=all_kf[:max_index] * 1e-10, y1=all_dqz_m[:max_index] * 1e-10 - 1e-3,
+    #                 y2=all_dqz_m[:max_index] * 1e-10 + 1e-3, facecolor="gold", alpha=0.3)
 
     ax2 = ax.twinx()  # instantiate a second axes that shares the same x-axis
     colour_ax2 = "green"
-    ax2.plot(polar_angles, all_dqz_m / all_kf * 1e2, '1', color=colour_ax2)
+    dkf_percent = all_dqz_m / all_kf * 1e2
+    ax2.plot(all_kf[max_index:] * 1e-10, dkf_percent[max_index:], '1', color=colour_ax2)
+    # ax2.fill_between(x=all_kf[:max_index] * 1e-10, y1=dkf_percent[:max_index] - 3e-2,
+    #                  y2=dkf_percent[:max_index] + 3e-2, facecolor="green", alpha=0.3)
     ax2.tick_params(axis="y", direction="in")
-    ax2.set_ylabel(r"$\dfrac{\Delta k_f}{k_f}$ * 100%", color=colour_ax2)
+    ax2.set_ylabel(r"Relative uncertainty $\dfrac{|\Delta k_f|}{|k_f|}$ * 100%", color=colour_ax2)
     ax2.tick_params(axis='y', labelcolor=colour_ax2)
+    ax2.legend(["Relative uncertainty"], loc='lower left', bbox_to_anchor=(0, 0.65))
 
-    secax = ax.secondary_xaxis('top', functions=(forward, inverse))
-    secax.set_xlabel(r' Outgoing wavenumber $k_f$ (angstrom$^{-1}$)')
-    secax.tick_params(axis="x", direction="in", labelsize=10)
-
-    ax.set_title('Q-resolution of the secondary spectrometer')
-    filename = geo_ctx.filename_polarangle
+    # ax.text(1.02, 0.01,
+    #         r"Shadowed area: same $k_f$-values" + "\n" + "from different analyser segments \nwith different resolution")
+    ax.set_title('Resolution of the secondary spectrometer')
+    filename = geo_ctx.filename_res
     plt.savefig(filename + '.pdf', bbox_inches='tight')
     plt.savefig(filename + '.png', bbox_inches='tight')
     print("{:s} plotted.".format(filename))
 
 
-def resolution_calculation(geo_ctx: GeometryContext, instrument: InstrumentContext, polar_angles, azimuthal_angles):
-    # records the calculated data for plotting later
-    all_qxy = []
-    all_qz = []
-    all_dqxy = []
-    all_dqz = []
-    all_dqx_m = np.empty_like(polar_angles)  # subscript m for McStas
-    all_dqy_m = np.empty_like(polar_angles)
-    all_dqz_m = np.empty_like(polar_angles)
-
-    # calculate the q-resolution for each segment on the analyser, which gives different q-vectors
-    # the outer loop is for the polar angle, and the inner one for the azimuthal angle
-    for i, phi in enumerate(polar_angles):
-        # calculates the resolution in the horizontal plane and in the vertical direction.
-        # qxy and qz have different dimensions!
-        point_now = [geo_ctx.analyser_points[0][i], geo_ctx.analyser_points[1][i]]
-        if i == 0:
-            j = 1
-        else:
-            j = i - 1
-        point_nearest = [geo_ctx.analyser_points[0][j], geo_ctx.analyser_points[1][j]]
-        kf = geo_ctx.wavenumber_bragg(instrument=instrument, analyser_point=point_now)
-        qz = get_qz(kf=kf, polar_angle=phi)
-        delta_qz = get_resolution_qz(geo_ctx=geo_ctx, instrument=instrument, analyser_point_now=point_now,
-                                     analyser_point_nearest=point_nearest, kf=kf, phi=phi)
-        for theta in azimuthal_angles:
-            kf_vector = get_kf_vector(kf_norm=kf, azimuthal=theta,
-                                      polar=phi)  # the kf-vector changes is determined by the azimuthal and polar angles
-            qxy = get_qxy(kf_vector=kf_vector)  # horizontal component of q-vector
-            delta_qxy = get_resolution_qxy(geo_ctx=geometryctx, instrument=instrument, analyser_point_now=point_now,
-                                           analyser_point_nearest=point_nearest, kf=kf, phi=phi, qxy=qxy, theta=theta)
-            all_qxy.append(qxy)
-            all_dqxy.append(delta_qxy)
-        all_dqx_m[i], all_dqy_m[i], all_dqz_m[i] = get_dq_mcstas_coordinate(geo_ctx=geometryctx, instrument=instrument,
-                                                                            analyser_point_now=point_now,
-                                                                            analyser_point_nearest=point_nearest, kf=kf,
-                                                                            index=i)
-        # print("kf and dkf", kf * 1e-10, all_dqz_m[i] * 1e-10)
-
-        all_qz.append(qz)
-        all_dqz.append(delta_qz)
-
-    all_qxy = np.array(all_qxy)
-    all_qz = np.array(all_qz)
-    all_dqxy = np.array(all_dqxy)
-    all_dqz = np.array(all_dqz)
-    return all_qxy, all_qz, all_dqxy, all_dqz, all_dqx_m, all_dqy_m, all_dqz_m
+def resolution_calculation(geo_ctx: GeometryContext, instrument: InstrumentContext):
+    all_dqx_m = np.array(list(map(lambda i: kf_resol_mcstas(geo_ctx=geo_ctx, instrument=instrument, index_now=i,
+                                                            index_nearest=1 if i == 0 else i - 1)[0],
+                                  range(geo_ctx.polar_angles.shape[0]))))
+    all_dqy_m = np.array(list(map(lambda i: kf_resol_mcstas(geo_ctx=geo_ctx, instrument=instrument, index_now=i,
+                                                            index_nearest=1 if i == 0 else i - 1)[1],
+                                  range(geo_ctx.polar_angles.shape[0]))))
+    all_dqz_m = np.array(list(map(lambda i: kf_resol_mcstas(geo_ctx=geo_ctx, instrument=instrument, index_now=i,
+                                                            index_nearest=1 if i == 0 else i - 1)[2],
+                                  range(geo_ctx.polar_angles.shape[0]))))
+    return all_dqx_m, all_dqy_m, all_dqz_m
 
 
-def check_detector_spread(geo_ctx: GeometryContext, instrument: InstrumentContext):
-    keep_index = []
-    delete_index = []
-    spread_factor = np.empty_like(geo_ctx.detector_points[0])
-    i = 0
-    while i < geo_ctx.detector_points[0].shape[0] - 1:
-        keep_index.append(i)
-        point_now = [geo_ctx.detector_points[0][i], geo_ctx.detector_points[1][i]]
-        j = i + 1
-        while j < geo_ctx.detector_points[0].shape[0]:
-            point_next = [geo_ctx.detector_points[0][j], geo_ctx.detector_points[1][j]]
-            if points_distance(point_now, point_next) < instrument.detector_resolution:
-                delete_index.append(j)
-                # print(j, points_distance(point_now, point_next))
-                j += 1
-            else:
-                break
-        i = j
-    print(len(keep_index), keep_index)
-    print(len(delete_index), delete_index)
-
-
-def spread_factor_detector(geo_ctx: GeometryContext, instrument: InstrumentContext, analyser_now, analyser_nearest,
-                           index_now):
+def spread_factor_detector(geo_ctx: GeometryContext, instrument: InstrumentContext, index_now, index_nearest):
+    an_point = (geo_ctx.analyser_points[0][index_now], geo_ctx.analyser_points[1][index_now])
     detector_now = [geo_ctx.detector_points[0][index_now], geo_ctx.detector_points[1][index_now]]
-    if index_now == 0:
-        index_nearest = 1
-    else:
-        index_nearest = index_now - 1
     detector_next = [geo_ctx.detector_points[0][index_nearest], geo_ctx.detector_points[1][index_nearest]]
     spread_factor_polar = max(1, instrument.detector_resolution / points_distance(detector_now, detector_next))
 
-    detector_spread_azimuth = instrument.analyser_segment * points_distance(detector_now,
-                                                                            geo_ctx.focus_point) / points_distance(
-        analyser_now, geo_ctx.focus_point)
-    spread_factor_azimuth = max(1, instrument.detector_resolution / detector_spread_azimuth)
-    return spread_factor_polar, spread_factor_azimuth
+    detector_spread_azi = instrument.an_seg * points_distance(detector_now, geo_ctx.foc_point) / points_distance(
+        an_point, geo_ctx.foc_point)
+    spread_factor_azi = max(1, instrument.detector_resolution / detector_spread_azi)
+    return spread_factor_polar, spread_factor_azi
 
 
-geometryctx = GeometryContext(side="same")
+def distances_fd_as(geo_ctx: GeometryContext, index):
+    distance_fd = points_distance(point1=geo_ctx.foc_point,
+                                  point2=[geo_ctx.detector_points[0][index], geo_ctx.detector_points[1][index]])
+    distance_as = points_distance(point1=geo_ctx.foc_point,
+                                  point2=[geo_ctx.analyser_points[0][index], geo_ctx.analyser_points[1][index]])
+    return distance_fd / distance_as
+
+
+def plot_distance_fd_as(geo_ctx: GeometryContext):
+    ratio_fd_af = np.array(
+        list(map(lambda i: distances_fd_as(geo_ctx=geo_ctx, index=i), range(geometryctx.polar_angles.shape[0]))))
+    fig, ax = plt.subplots()
+    ax.plot(np.rad2deg(geometryctx.polar_angles), ratio_fd_af)
+    # plotting_format(ax=ax, grid=True)
+    ax.tick_params(axis="x", direction="in")
+    ax.tick_params(axis="y", direction="in")
+    # if grid is True:
+    ax.grid()
+    ax.set_xlabel("Polar angle of analyser segment (degree)")
+    ax.set_ylabel(r"Ratio $\frac{D_{FD}}{D_{AF}}$")
+    ax.set_title("Distance-ratio focus-detector / analyser-focus")
+    plt.tight_layout()
+    plt.savefig("Distance_fd_af.png")
+    plt.close(fig)
+
+
+geometryctx = GeometryContext()
 instrumentctx = InstrumentContext()
+# print("The index of the segment in the middle of the polar angle range: {:d}".format(int(geometryctx.pol_middle_index + 1)))
 
-# points_x, points_y = geometryctx.analyser_points
+# plot_geometry(geo_ctx=geometryctx, instrument=instrumentctx)
 
-# plt.figure(1)
-# ax = plt.gca()
-# ax.set_aspect('equal', 'box')
-# ax.spines['right'].set_visible(False)
-# ax.spines['top'].set_visible(False)
-# # ax.add_patch(ellipse)
-#
-# # generates the azimuthal angle elements based on the size of the analyser segments
-# azimuthal_start = np.deg2rad(5.)  # radian
-# azimuthal_stop = np.deg2rad(170.)  # radian
-# angle_one_segment = np.arcsin(instrumentctx.analyser_segment / geometryctx.start_distance)
-# number_points = round(abs(azimuthal_start - azimuthal_stop / angle_one_segment))
-# azimuthal_angles = np.linspace(azimuthal_start, azimuthal_stop, num=number_points)
-# polar_angles = np.arctan(geometryctx.analyser_points[1][:] / geometryctx.analyser_points[0][:])
-#
-# all_qxy, all_qz, all_dqxy, all_dqz, all_dqx_m, all_dqy_m, all_dqz_m = resolution_calculation(geo_ctx=geometryctx,
-#                                                                                              instrument=instrumentctx,
-#                                                                                              polar_angles=polar_angles,
-#                                                                                              azimuthal_angles=azimuthal_angles)
-# all_kf = np.array(list(map(lambda x, y: wavenumber_bragg(geo_ctx=geometryctx, instrument=instrumentctx,
-#                                                          analyser_point=[x, y]), geometryctx.analyser_points[0],
-#                            geometryctx.analyser_points[1])))
-# plot_whole_geometry(geo_ctx=geometryctx, instrument=instrumentctx)
-# plot_resolution_polarangles(geo_ctx=geometryctx, polar_angles=polar_angles, all_dqx_m=all_dqx_m, all_dqy_m=all_dqy_m,
-#                             all_dqz_m=all_dqz_m, all_kf=all_kf)
-# write_mcstas(geo_ctx=geometryctx, instrument=instrumentctx)
+plot_distance_fd_as(geo_ctx=geometryctx)
 
 # plot_analyser_comparison(points_analyser_x=geometryctx.analyser_ellipse_points[0],
 #                          points_analyser_y=geometryctx.analyser_ellipse_points[1],
 #                          points_x=geometryctx.analyser_points[0], points_y=geometryctx.analyser_points[1])
 
-# all_delta_qxy_rob, all_delta_qz_rob = get_resolution_robbewley(geo_ctx=geometryctx, instrument=instrumentctx,
-#                                                                all_qxy=all_qxy, all_qz=all_qz)
-# plot_resolution_comparison(all_qxy=all_qxy, all_dqxy=all_dqxy, all_delta_qxy_rob=all_delta_qxy_rob, all_qz=all_qz,
-#                            all_dqz=all_dqz,
-#                            all_delta_qz_rob=all_delta_qz_rob)
 
+# all_dqx_m, all_dqy_m, all_dqz_m = resolution_calculation(geo_ctx=geometryctx, instrument=instrumentctx)
+# plot_resolution_kf(geo_ctx=geometryctx, all_dqx_m=all_dqx_m, all_dqy_m=all_dqy_m, all_dqz_m=all_dqz_m)
+
+#
+# plot_resolution_polarangles(geo_ctx=geometryctx, polar_angles=polar_angles, all_dqx_m=all_dqx_m, all_dqy_m=all_dqy_m,
+#                             all_dqz_m=all_dqz_m, all_kf=all_kf)
+#
+# write_mcstas(geo_ctx=geometryctx, instrument=instrumentctx)
+#
+#
+#
 # check_detector_spread(geo_ctx=geometryctx, instrument=instrumentctx)
 
-kf = geometryctx.wavenumbers
+# kf = geometryctx.wavenumbers
 # detec_hori_x = geometryctx.dete_hori_x
 # detec_vert_y = geometryctx.dete_vert_y
 # fig, axs = plt.subplots(1, 2, sharey="all")
@@ -632,19 +444,295 @@ kf = geometryctx.wavenumbers
 # # plt.show()
 # plt.close(fig)
 
-# plt.figure()
-distances = np.linalg.norm([geometryctx.analyser_points[0], geometryctx.analyser_points[1]], axis=0)
-scatt_angles = np.array(list(map(lambda i: geometryctx.get_twotheta_analyser(
-    analyser_point=[geometryctx.analyser_points[0][i], geometryctx.analyser_points[1][i]]),
-                        range(geometryctx.analyser_points[0].shape[0]))))
+# distances = np.linalg.norm([geometryctx.analyser_points[0], geometryctx.analyser_points[1]], axis=0)
+# scatt_angles = np.array(list(map(lambda i: geometryctx.get_twotheta_analyser(
+#     analyser_point=[geometryctx.analyser_points[0][i], geometryctx.analyser_points[1][i]]),
+#                         range(geometryctx.analyser_points[0].shape[0]))))
+#
+# fig, axs = plt.subplots(1, 3, sharey="all")
+# # axs[0].plot(geometryctx.detector_points[0], kf * 1e-10)
+# axs[0].plot(np.rad2deg(geometryctx.polar_angles), geometryctx.wavenumbers * 1e-10)
+# axs[1].plot(geometryctx.detector_points[1], geometryctx.wavenumbers * 1e-10)
+# # axs[1].plot(np.rad2deg(scatt_angles / 2.0), kf * 1e-10)
+# axs[2].plot(distances, geometryctx.wavenumbers * 1e-10)
+# axs[0].grid()
+# axs[1].grid()
+# axs[2].grid()
+# plt.show()
 
-fig, axs = plt.subplots(1, 3, sharey="all")
-# axs[0].plot(geometryctx.detector_points[0], kf * 1e-10)
-axs[0].plot(np.rad2deg(geometryctx.polar_angles), kf * 1e-10)
-axs[1].plot(geometryctx.detector_points[1], kf * 1e-10)
-# axs[1].plot(np.rad2deg(scatt_angles / 2.0), kf * 1e-10)
-axs[2].plot(distances, kf * 1e-10)
-axs[0].grid()
-axs[1].grid()
-axs[2].grid()
-plt.show()
+# all_qx = np.array(list(map(lambda j: np.array(list(
+#     map(lambda i: geometryctx.vector_transfer(index_pol=i, index_azi=j)[0], range(geometryctx.wavenumbers.shape[0])))),
+#                            range(geometryctx.azi_angles.shape[0]))))*1e-10
+# all_qy = np.array(list(map(lambda j: np.array(list(
+#     map(lambda i: geometryctx.vector_transfer(index_pol=i, index_azi=j)[1], range(geometryctx.wavenumbers.shape[0])))),
+#                            range(geometryctx.azi_angles.shape[0]))))*1e-10
+# all_qz = np.array(list(map(lambda j: np.array(list(
+#     map(lambda i: geometryctx.vector_transfer(index_pol=i, index_azi=j)[2], range(geometryctx.wavenumbers.shape[0])))),
+#                            range(geometryctx.azi_angles.shape[0]))))*1e-10
+#
+# print("qx: ", np.min(all_qx), np.max(all_qx))
+# print("qy: ", np.min(all_qy), np.max(all_qy))
+# print("qz: ", np.min(all_qz), np.max(all_qz))
+
+pol_1d = geometryctx.polar_angles
+kf_1d = geometryctx.wavenumbers_out
+plt.rcParams.update({'font.size': 12})
+hw = 1.04e-3 * CONVERSION_JOULE_PER_EV  # energy transfer value for plotting
+
+ki_vector = np.array([geometryctx.wavenumber_in, 0, 0])
+data_qx = np.array(list(map(lambda j: np.array(list(
+    map(lambda i: geometryctx.wavevector_transfer(index_pol=j, index_azi=i)[0],
+        range(geometryctx.azi_angles.shape[0])))),
+                            range(pol_1d.shape[0]))))
+data_qy = np.array(list(map(lambda j: np.array(list(
+    map(lambda i: geometryctx.wavevector_transfer(index_pol=j, index_azi=i)[1],
+        range(geometryctx.azi_angles.shape[0])))),
+                            range(pol_1d.shape[0]))))
+data_qz = np.array(list(map(lambda j: np.array(list(
+    map(lambda i: geometryctx.wavevector_transfer(index_pol=j, index_azi=i)[2],
+        range(geometryctx.azi_angles.shape[0])))),
+                            range(pol_1d.shape[0]))))
+# TODO: data_de is changed from meV to J, the functions using this array have to be updated, too
+data_de = np.array(list(map(lambda j: np.array(list(map(
+    lambda i: PLANCKS_CONSTANT ** 2 * (geometryctx.wavenumber_in ** 2 - geometryctx.wavenumbers_out[j] ** 2) / (
+            2 * MASS_NEUTRON), range(geometryctx.azi_angles.shape[0])))),
+                            range(pol_1d.shape[0]))))
+if np.min(abs((hw - data_de) / hw)) > 0.02:
+    hw_alternative = data_de[np.argmin(abs(hw - data_de))]
+    raise RuntimeError("Given energy transfer is not available, the closest value is {:.2f} meV".format(
+        hw_alternative / CONVERSION_JOULE_PER_EV * 1e3))
+data_crosssection = np.array(list(map(lambda i: np.array(list(
+    map(lambda j: scatt_cross_qxqyde(qq_x=data_qx[i, j], qq_y=data_qy[i, j], hw=hw, ki=geometryctx.wavenumber_in,
+                                     qq_z=data_qz[i, j], kf=geometryctx.wavenumbers_out[i], pol_angle=pol_1d[i],
+                                     mushroom=True),
+        range(geometryctx.azi_angles.shape[0])))), range(pol_1d.shape[0]))))
+
+
+# print(data_crosssection[data_crosssection is not None])
+
+
+def magnon_scattered(scattering_de, magnon_de, tol=0.1):
+    if abs(scattering_de - magnon_de) / abs(scattering_de) < tol:
+        return scattering_de
+    else:
+        return None
+
+
+def wavevector_transfer_rotation(rot_angle, wavevector_transfer):
+    new_qx, new_qy = rotation_z(rot_angle=rot_angle, old_x=wavevector_transfer[0], old_y=wavevector_transfer[1])
+    wavevector_transfer[:2] = new_qx, new_qy
+    return wavevector_transfer
+
+
+def rotation_calc(qx, qy, qz, rot_angle, term):
+    data_qx, data_qy = rotation_z(rot_angle, qx, qy)
+    data_qz = qz
+    magnon_de = np.array(list(map(lambda j: np.array(list(
+        map(lambda i: magnon_energy(wavevector_transfer=np.array([data_qx[j, i], data_qy[j, i], data_qz[j, i]])),
+            range(geometryctx.azi_angles.shape[0])))), range(pol_1d.shape[0])))) * 1e3 / CONVERSION_JOULE_PER_EV
+    if term == TERM_MAGNON:
+        calculated = magnon_de
+    elif term == TERM_SCATTERING:
+        calculated = np.array(list(map(lambda j: np.array(list(
+            map(lambda i: magnon_scattered(scattering_de=data_de[j, i], magnon_de=magnon_de[j, i], tol=0.05),
+                range(geometryctx.azi_angles.shape[0])))), range(pol_1d.shape[0]))))
+    elif term == TERM_CROSSSECTION:
+        calculated = np.array(list(map(lambda i: np.array(list(
+            map(lambda j: scatt_cross_qxqyde(qq_x=data_qx[i, j], qq_y=data_qy[i, j], hw=hw,
+                                             ki=geometryctx.wavenumber_in,
+                                             qq_z=data_qz[i, j], kf=geometryctx.wavenumbers_out[i], pol_angle=pol_1d[i],
+                                             mushroom=True),
+                range(geometryctx.azi_angles.shape[0])))), range(pol_1d.shape[0]))))
+    else:
+        raise RuntimeError("Invalid term given. Cannot calculate teh rotated signal.")
+
+    return data_qx, data_qy, calculated
+
+
+def plot_range_qxqy(qx, qy, rot_step, rot_number):
+    qx_min, qx_max, qy_min, qy_max = None, None, None, None
+    for i in range(rot_number):
+        qx, qy = rotation_z(rot_angle=rot_step, old_x=qx, old_y=qy)
+        if i == 0:
+            qx_min, qx_max = np.min(qx), np.max(qx)
+            qy_min, qy_max = np.min(qy), np.max(qy)
+        else:
+            qx_min = min(qx_min, np.min(qx))
+            qy_min = min(qy_min, np.min(qy))
+            qx_max = max(qx_max, np.max(qx))
+            qy_max = max(qy_max, np.max(qy))
+    plot_qx = np.linspace(qx_min, qx_max, num=1000)
+    plot_qy = np.linspace(qy_min, qy_max, num=1000)
+    return plot_qx, plot_qy
+
+
+def plot_etransfer(de_2d, energy_transfer):
+    if isinstance(energy_transfer, float):
+        de_2d = np.where(abs(np.where(de_2d, de_2d, 0) - energy_transfer) < 2e-2, de_2d, None)
+    else:
+        raise RuntimeError("Invalid energy transfer given")
+    return de_2d
+
+
+plot_qz = data2range(data_qz)
+# for rot in range(rotation_number):
+rotation_step = np.deg2rad(10)
+rotation_number = 10 + 1
+# data_qx_rot = np.array(list(map(lambda i: np.array(list(
+#     map(lambda j: rotation_qxqy(rotation_step, data_qx[i, j], data_qy[i, j])[0],
+#         range(geometryctx.azi_angles.shape[0])))), range(pol_1d.shape[0]))))
+# data_qy_rot = np.array(list(map(lambda i: np.array(list(
+#     map(lambda j: rotation_qxqy(rotation_step, data_qx[i, j], data_qy[i, j])[1],
+#         range(geometryctx.azi_angles.shape[0])))), range(pol_1d.shape[0]))))
+
+# data_qx, data_qy = rotation_z(rotation_step, data_qx, data_qy)
+# plot_qx = data2range(data_qx)
+# plot_qy = data2range(data_qy)
+fig, ax = plt.subplots()
+fig2, ax2 = plt.subplots()
+fig3, ax3 = plt.subplots()
+plot_qx, plot_qy = plot_range_qxqy(qx=data_qx, qy=data_qy, rot_step=rotation_step, rot_number=rotation_number)
+qx_2d, qy_2d = np.meshgrid(plot_qx, plot_qy)
+
+for i in range(rotation_number):
+    # data_qx, data_qy, magnon_de, scatt_de = magnon_calc(qx=data_qx, qy=data_qy, qz=data_qz, rot_angle=rotation_step)
+    # the energy transfers are already in the unit of meV
+    # magnon_2d = dispersion_signal(range_x=plot_qx, range_y=plot_qy, data_x=data_qx, data_y=data_qy,
+    #                               intensity=magnon_de)
+    # # scatt_de = np.array(list(map(lambda j: np.array(list(
+    # #     map(lambda i: magnon_scattered(scattering_de=data_de[j, i], magnon_de=magnon_de[j, i], tol=0.05),
+    # #         range(geometryctx.azi_angles.shape[0])))), range(pol_1d.shape[0]))))
+    # scatt_2d = dispersion_signal(range_x=plot_qx, range_y=plot_qy, data_x=data_qx, data_y=data_qy,
+    #                              intensity=scatt_de)
+    data_qx, data_qy, data_crosssection = rotation_calc(qx=data_qx, qy=data_qy, qz=data_qz, rot_angle=rotation_step,
+                                                        term=TERM_CROSSSECTION)
+    crosssection_2d = dispersion_signal(range_x=plot_qx, range_y=plot_qy, data_x=data_qx, data_y=data_qy,
+                                        intensity=data_crosssection)
+    # crosssection_2d /= np.max(crosssection_2d)
+    # cnt_magnon = ax.scatter(x=qx_2d * 1e-10, y=qy_2d * 1e-10, c=magnon_2d, alpha=0.5)
+    # # scatt_2d = plot_etransfer(scatt_2d, 1.0)
+    # cnt_scatt = ax2.scatter(x=qx_2d * 1e-10, y=qy_2d * 1e-10, c=scatt_2d, alpha=0.5)
+    cnt_crosssection = ax3.scatter(x=qx_2d * 1e-10, y=qy_2d * 1e-10, c=crosssection_2d, alpha=0.5)
+print("finished1")
+# cbar_magnon = fig.colorbar(cnt_magnon, ax=ax)
+# cbar_magnon.set_label(r"$\hbar\omega_{magnon}=D(\vec{k}_i-\vec{k}_f-\vec{\tau})^2$ (meV)")
+# cbar_scatt = fig2.colorbar(cnt_scatt, ax=ax2)
+# cbar_scatt.set_label(r"$\hbar\omega$ (meV)")
+cbar_scatt = fig3.colorbar(cnt_crosssection, ax=ax3)
+print("finished2")
+cbar_scatt.set_label(r"Intensity")  # normalised to 1
+# # magnon_de = np.array(list(map(lambda j: np.array(list(
+# #     map(lambda i: magnon_energy(wavevector_transfer=np.array([data_qx[j, i], data_qy[j, i], data_qz[j, i]])),
+# #         range(geometryctx.azi_angles.shape[0])))), range(pol_1d.shape[0])))) * 1e3 / CONVERSION_JOULE_PER_EV
+#
+# # plot magnon from Mushroom Q-values without considering the energy conservation
+# # peak_2d = dispersion2intensity(range_x=plot_qx, range_y=plot_qy, data_x=data_qx, data_y=data_qy,
+# #                                intensity=magnon_de)
+# # cbar.set_label(r"$\hbar\omega = \frac{\hbar^2}{2m}(k_i^2-k_f^2)$ (meV)")
+# ax.set_xlabel(r"$Q_x=k_{i,x}-k_{f,x}$ ($\AA^{-1}$)")
+# ax.set_ylabel(r"$Q_y=k_{i,y}-k_{f,y}$ ($\AA^{-1}$)")
+# ax.tick_params(axis="x", direction="in")
+# ax.tick_params(axis="y", direction="in")
+# ax.set_title(r"Magnon dispersion with $Q_x$ and $Q_y$ values in Mushroom")
+# ax.axis("equal")
+# fig.tight_layout()
+# fig.savefig("MagnonMushroom_QxQy_Rotated_{:d}_{:d}.png".format(rotation_number, int(np.rad2deg(rotation_step))))
+# plt.close(fig)
+#
+# # scatt_de = np.array(list(map(lambda j: np.array(list(
+# #     map(lambda i: magnon_scattered(scattering_de=data_de[j, i], magnon_de=magnon_de[j, i], tol=0.05),
+# #         range(geometryctx.azi_angles.shape[0])))), range(pol_1d.shape[0]))))
+# # peak_2d = dispersion2intensity(range_x=plot_qx, range_y=plot_qy, data_x=data_qx, data_y=data_qy,
+# #                                intensity=scatt_de)
+# ax2.set_xlabel(r"$Q_x=k_{i,x}-k_{f,x}$ ($\AA^{-1}$)")
+# ax2.set_ylabel(r"$Q_y=k_{i,y}-k_{f,y}$ ($\AA^{-1}$)")
+# ax2.tick_params(axis="x", direction="in")
+# ax2.tick_params(axis="y", direction="in")
+# ax2.set_title(r"$|\frac{\hbar\omega_{MU}-\hbar\omega_{MA}}{\hbar\omega_{MU}}|<0.05$")
+# ax2.axis("equal")
+# fig2.tight_layout()
+# fig2.savefig("MagnonMushroom_QxQydE0.05_Rotated_{:d}_{:d}.png".format(rotation_number, int(np.rad2deg(rotation_step))))
+# plt.close(fig2)
+#
+ax3.set_xlabel(r"$Q_x=k_{i,x}-k_{f,x}$ ($\AA^{-1}$)")
+ax3.set_ylabel(r"$Q_y=k_{i,y}-k_{f,y}$ ($\AA^{-1}$)")
+ax3.tick_params(axis="x", direction="in")
+ax3.tick_params(axis="y", direction="in")
+ax3.set_title(r"$\hbar\omega=$" + "{:.2f} meV".format(hw / CONVERSION_JOULE_PER_EV * 1e3))
+ax3.axis("equal")
+fig3.tight_layout()
+fig3.savefig("CrosssectionMushroom_QxQydE_{:.2f}meV.png".format(hw / CONVERSION_JOULE_PER_EV * 1e3))
+plt.close(fig3)
+
+# magnon dispersion with energy conservation
+# fig, ax1 = plt.subplots()
+# scatt_de = np.array(list(map(lambda j: np.array(list(
+#     map(lambda i: magnon_scattered(scattering_de=data_de[j, i], magnon_de=magnon_de[j, i], tol=0.01),
+#         range(geometryctx.azi_angles.shape[0])))), range(pol_1d.shape[0]))))
+# peak_2d = dispersion2intensity(range_x=plot_qx, range_y=plot_qy, data_x=data_qx, data_y=data_qy,
+#                                intensity=scatt_de)
+# cnt = ax1.scatter(x=qx_2d * 1e-10, y=qy_2d * 1e-10, c=peak_2d)
+# cbar = fig.colorbar(cnt, ax=ax1)
+# cbar.set_label(r"$\hbar\omega$ (meV)")
+# ax1.set_xlabel(r"$Q_x=k_{i,x}-k_{f,x}$ ($\AA^{-1}$)")
+# ax1.set_ylabel(r"$Q_y=k_{i,y}-k_{f,y}$ ($\AA^{-1}$)")
+# ax1.tick_params(axis="x", direction="in")
+# ax1.tick_params(axis="y", direction="in")
+# ax1.set_title(r"$|\frac{\hbar\omega_{MU}-\hbar\omega_{MA}}{\hbar\omega_{MU}}|<0.01$")
+# ax1.axis("equal")
+# fig.tight_layout()
+# plt.savefig("MagnonMushroom_QxQydE_0.01.png")
+# plt.close(fig)
+
+# fig, ax = plt.subplots()
+# qx_2d, qy_2d = np.meshgrid(plot_qx, plot_qy)
+# peak_2d = dispersion2intensity(range_x=plot_qx, range_y=plot_qy, data_x=data_qx, data_y=data_qy,
+#                                intensity=data_de)
+# cnt = ax.scatter(x=qx_2d * 1e-10, y=qy_2d * 1e-10, c=peak_2d)
+# cbar = fig.colorbar(cnt, ax=ax)
+# cbar.set_label(r"$\hbar\omega = \frac{\hbar^2}{2m}(k_i^2-k_f^2)$ (meV)")
+# ax.set_xlabel(r"$Q_z=k_{i,x}-k_{f,x}$ ($\AA^{-1}$)")
+# ax.set_ylabel(r"$Q_y=k_{i,y}-k_{f,y}$ ($\AA^{-1}$)")
+# ax.tick_params(axis="x", direction="in")
+# ax.tick_params(axis="y", direction="in")
+# ax.set_title(r"Energy transfer $\hbar\omega$ projected on ($Q_x$, $Q_y$) plane")
+# ax.axis("equal")
+# plt.tight_layout()
+# plt.savefig("QxQy-dE.png")
+# plt.close(fig)
+
+# fig, ax = plt.subplots()
+# qy_2d, qz_2d = np.meshgrid(plot_qy, plot_qz)
+# peak_2d = dispersion2intensity(range_x=plot_qy, range_y=plot_qz, data_x=data_qy, data_y=data_qz,
+#                                intensity=data_de)
+# cnt = ax.scatter(x=qy_2d * 1e-10, y=qz_2d * 1e-10, c=peak_2d)
+# cbar = fig.colorbar(cnt, ax=ax)
+# cbar.set_label(r"$\hbar\omega = \frac{\hbar^2}{2m}(k_i^2-k_f^2)$ (meV)")
+# ax.set_xlabel(r"$Q_y=k_{i,y}-k_{f,y}$ ($\AA^{-1}$)")
+# ax.set_ylabel(r"$Q_z=k_{i,z}-k_{f,z}$ ($\AA^{-1}$)")
+# ax.tick_params(axis="x", direction="in")
+# ax.tick_params(axis="y", direction="in")
+# ax.set_title(r"Energy transfer $\hbar\omega$ projected on ($Q_y$, $Q_z$) plane")
+# ax.axis("equal")
+# plt.tight_layout()
+# plt.savefig("QyQz-dE.png")
+# plt.close(fig)
+
+# fig, (ax1, ax2) = plt.subplots(1, 2, sharey="all")
+# ax1.scatter(data_qz * 1e-10, data_de)
+# ax1.set_xlabel(r"$Q_z=k_{i,z}-k_{f,z}$ ($\AA^{-1}$)")
+# ax1.set_ylabel(r"$\hbar\omega = \frac{\hbar^2}{2m}(k_i^2-k_f^2)$ (meV)")
+# ax1.tick_params(axis="x", direction="in")
+# ax1.tick_params(axis="y", direction="in")
+# ax1.grid()
+#
+# ax2.scatter(np.linalg.norm([data_qx, data_qy], axis=0) * 1e-10, data_de)
+# ax2.set_xlabel(r"$Q_{xy}=\sqrt{Q_x^2+Q_y^2}$ ($\AA^{-1}$)")
+# # ax2.set_ylabel(r"$\hbar\omega = \frac{\hbar^2}{2m}(k_i^2-k_f^2)$ (meV)")
+# ax2.tick_params(axis="x", direction="in")
+# ax2.tick_params(axis="y", direction="in")
+# ax2.grid()
+# fig.suptitle("Energy and wavevector transfer")
+# fig.tight_layout(rect=[0, 0, 1, 0.95])
+# plt.savefig("Qxy-Qz-dE.png")
+# plt.close(fig)

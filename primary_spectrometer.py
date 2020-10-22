@@ -1,6 +1,8 @@
 import matplotlib.pyplot as plt
 import numpy as np
-from helper import wavenumber_to_2theta_bragg, InstrumentContext, wavelength_to_wavenumber, angle_triangle
+from helper import InstrumentContext, wavelength_to_wavenumber, angle_triangle
+from neutron_scattering import wavenumber_2theta_bragg
+from geometry_context import GeometryContext
 
 ZERO_TOL = 1e-6
 ENERGY_SELECTION_MONOCHROMATOR = "Monochromator"
@@ -20,7 +22,8 @@ AXIS_POLAR = "y"
 
 def get_filename(energy_selection_type):
     if isinstance(energy_selection_type, str):
-        return FILENAME_PREFIX + energy_selection_type + ".pdf"
+        # return FILENAME_PREFIX + energy_selection_type + ".pdf"
+        return FILENAME_PREFIX + energy_selection_type + "Test.pdf"
     else:
         raise RuntimeError("Invalid type of the energy selection variable given.")
 
@@ -50,27 +53,26 @@ def get_resolution_monochromator(instrument: InstrumentContext, ki):
         alpha_i, alpha_f = divergence_mono(instrument=instrument, axis=axis)  # incoming and outgoing divergence
         numerator = alpha_i ** 2 * alpha_f ** 2 + eta ** 2 * alpha_i ** 2 + eta ** 2 * alpha_f ** 2
         denominator = 4 * eta ** 2 + alpha_i ** 2 + alpha_f ** 2
-
         return np.sqrt(numerator / denominator)
 
     def monochromator_twotheta(instrument: InstrumentContext, ki):
-        return wavenumber_to_2theta_bragg(wave_number=ki, instrument=instrument)
+        return wavenumber_2theta_bragg(wave_number=ki, instrument=instrument)
 
     def get_uncertainty_ki(instrument: InstrumentContext, ki):
         # gives the deviation of the wave-number by means of the Bragg's law
         dtheta_mono = angular_spread_monochromator(instrument=instrument, axis=AXIS_AZIMUTHAL)
         twotheta_mono = monochromator_twotheta(instrument=instrument, ki=ki)
-        dki_bragg = ki * np.sqrt(
-            np.sum(np.square([instrument.deltad_d, dtheta_mono / np.tan(twotheta_mono / 2.0)])))
+        dki_bragg = ki * np.linalg.norm([instrument.deltad_d, dtheta_mono / np.tan(twotheta_mono / 2.0)])
+        # print(dtheta_mono, np.rad2deg(twotheta_mono), ki * 1e-10, dki_bragg * 1e-10)
         return abs(dki_bragg)
 
     def get_spread_polar(instrument: InstrumentContext):
         # the spread of the polar angle is given simply by the divergence in both directions since there is no scattering
         # angles to be taken into consideration in this direction
-        return angle_triangle(instrument.distance_ms, instrument.sample_height)
+        return min(np.deg2rad(1.6), angle_triangle(instrument.distance_ms, instrument.sample_height))
 
     def get_spread_azimuthal(instrument: InstrumentContext):
-        return min(np.deg2rad(1.6), angular_spread_monochromator(instrument=instrument, axis=AXIS_POLAR))
+        return min(np.deg2rad(1.6), angular_spread_monochromator(instrument=instrument, axis=AXIS_AZIMUTHAL))
 
     dki = get_uncertainty_ki(instrument=instrument, ki=ki)
     dtheta = get_spread_azimuthal(instrument=instrument)
@@ -103,16 +105,17 @@ def plot_resolution(ki, dqx, dqy, dqz, energy_selection):
 
     ax.tick_params(axis="x", direction="in")
     ax.tick_params(axis="y", direction="in")
-    ax.legend(("x: horizontal", "y: vertical", r"z: along $k_f$"))
-    ax.set_xlabel(r"Incoming wavenumber $k_i$ (angstrom$^{-1}$)")
-    ax.set_ylabel(r"$\Delta k_i$ (angstrom$^{-1}$)")
+    ax.legend(("x: horizontal", "y: vertical", r"z: along $k_i$"))
+    ax.set_xlabel(r"Incoming wavenumber $|k_i|$ ($\AA^{-1}$)")
+    ax.set_ylabel(r"Component uncertainties $\Delta k_{i,\alpha}$ ($\AA^{-1}$), $\alpha=x,y,z$")
     ax.grid()
-    ax.set_title("Q-resolution of the primary spectrometer: {}".format(energy_selection))
+    ax.set_title("Resolution of the primary spectrometer with {}".format(energy_selection))
     ax2 = ax.twinx()  # instantiate a second axes that shares the same x-axis
     colour_ax2 = "green"
     ax2.plot(ki * 1e-10, dqz / ki * 1e2, '1', color=colour_ax2)
+    ax2.legend(["Relative uncertainty"], loc='lower left', bbox_to_anchor=(0, 0.65))
     ax2.tick_params(axis="y", direction="in")
-    ax2.set_ylabel(r"$\dfrac{\Delta k_i}{k_i}$ * 100%", color=colour_ax2)
+    ax2.set_ylabel(r"Relative uncertainty $\dfrac{|\Delta k_i|}{|k_i|}$ * 100%", color=colour_ax2)
     ax2.tick_params(axis='y', labelcolor=colour_ax2)
 
     plt.savefig(filename, bbox_inches='tight')
@@ -130,8 +133,9 @@ def get_resolution_velocityselector(instrument: InstrumentContext, ki):
 
 instrumentctx = InstrumentContext()
 
-wavelength_incoming = np.linspace(start=3.5, stop=6, num=100) * 1e-10  # m, wavelength
-wavenumber_incoming = wavelength_to_wavenumber(wavelength_incoming)
+# kf = GeometryContext(side="same").wavenumbers
+# wavelength_incoming = GeometryContext(side="same").wavenumbers * 1e-10  # m, wavelength
+wavenumber_incoming = GeometryContext().wavenumbers_out
 
 dki, dtheta, dphi = get_resolution_monochromator(instrument=instrumentctx, ki=wavenumber_incoming)
 dqx, dqy, dqz = get_resolution_components(ki=wavenumber_incoming, dki=dki, dtheta=dtheta, dphi=dphi)

@@ -1,11 +1,7 @@
-.idea/
+*
 
-__pycache__/
-
-
-venv/
+# But not these files...
+!.gitignore
+!.py
 
 test.py
-*.pdf
-*.png
-*.txt

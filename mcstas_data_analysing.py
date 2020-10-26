@@ -227,7 +227,7 @@ def position2dispersion(x, y, psd_comp, geo_ctx: GeometryContext):
     else:
         raise RuntimeError("Cannot match the component {:s}.".format(psd_comp))
     kf = geo_ctx.wavenumbers_out[index]
-    polar = geo_ctx.polar_angles[index]
+    polar = geo_ctx.pol_angles[index]
     kfx = kf * np.cos(polar) * np.cos(azimuthal)
     kfy = kf * np.cos(polar) * np.sin(azimuthal)
     kfz = kf * np.sin(polar)

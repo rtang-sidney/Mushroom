@@ -43,13 +43,13 @@ class GeometryContext(object):
 
         self.an_seg_size = 1e-2  # m
         points_x, points_y, self.mcstas_rotation_rad = self._generate_analyser_segments(instrument=instrumentctx)
-        self.polar_angles = np.arctan2(points_y, points_x)
+        self.pol_angles = np.arctan2(points_y, points_x)
         self.analyser_points = (points_x, points_y)
         self.wavenumbers_out = self._wavenumbers_from_analyser(instrument=instrumentctx)
         self.an_2theta = np.array(
             list(map(lambda i: self._get_an_twotheta(an_ind=i), range(self.analyser_points[0].shape[0]))))
         # print(self.wavenumbers)
-        self.pol_middle_index = np.argmin(np.abs(self.polar_angles - self.pol_middle))
+        self.pol_middle_index = np.argmin(np.abs(self.pol_angles - self.pol_middle))
 
         # if the analyser is generated as a part of an ideal ellipse:
         self.theo_ellipse_points = self._generate_analyser_ellipse()
@@ -207,7 +207,7 @@ class GeometryContext(object):
     def wavevector_transfer(self, index_pol, index_azi, rot_rad=0):
         ki_vector = np.array([self.wavenumber_in, 0, 0])
         kf = self.wavenumbers_out[index_pol]
-        pol_rad = self.polar_angles[index_pol]
+        pol_rad = self.pol_angles[index_pol]
         azi_rad = self.azi_angles[index_azi]
         kf_vector = wavenumber_vector(wavenumber=kf, azi_angle=azi_rad, pol_angle=pol_rad)
         q_vector = ki_vector - kf_vector

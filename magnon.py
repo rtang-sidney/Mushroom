@@ -42,8 +42,8 @@ def qyqz_to_kf(geo_ctx: GeometryContext, de, qy, qz, acute=True):
             theta = np.arcsin(-qy / (kf * np.cos(phi)))
             if np.min(geo_ctx.wavenumbers_out) < kf < np.max(
                     geo_ctx.wavenumbers_out):
-                if np.min(geo_ctx.polar_angles) < phi < np.max(
-                        geo_ctx.polar_angles):
+                if np.min(geo_ctx.pol_angles) < phi < np.max(
+                        geo_ctx.pol_angles):
                     if np.min(geo_ctx.azi_nega) < theta < np.max(geo_ctx.azi_nega) or np.min(
                             geo_ctx.azi_posi) < theta < np.max(geo_ctx.azi_posi):
                         if acute:

@@ -3,8 +3,9 @@ import numpy as np
 from geometry_context import GeometryContext
 from helper import wavelength_to_eV, points_distance, vector_bisector, InstrumentContext, points_to_vector, \
     points_to_slope_radian, unit_vector, vector_project_a2b, deg2min, points_bisecting_line, line_to_y, \
-    PLANCKS_CONSTANT, MASS_NEUTRON, CONVERSION_JOULE_PER_EV, data2range, dispersion_signal, rotation_z
-from magnon import magnon_energy, scatt_cross_qxqyde
+    PLANCKS_CONSTANT, MASS_NEUTRON, CONVERSION_JOULE_PER_EV, data2range, dispersion_signal, rotation_z, \
+    wavenumber_vector
+from magnon import magnon_energy, scatt_cross_qxqyde, scatt_cross_kikf
 
 plt.rcParams.update({'font.size': 12})
 
@@ -18,6 +19,11 @@ plt.rcParams.update({'font.size': 12})
 TERM_MAGNON = "magnon"
 TERM_SCATTERING = "scattering"  # energy conservation at the scattering
 TERM_CROSSSECTION = "crosssection"  # Delta function is approximated by Gaussian function with intensity distribution
+
+AXIS_X = "x"
+AXIS_Y = "y"
+AXIS_Z = "z"
+AXES = [AXIS_X, AXIS_Y, AXIS_Z]
 
 
 # def get_analyser_angular_spread(geo_ctx: GeometryContext, sample, analyser_point, focus_point):
@@ -329,13 +335,13 @@ def plot_resolution_kf(geo_ctx: GeometryContext, all_dqx_m, all_dqy_m, all_dqz_m
 def resolution_calculation(geo_ctx: GeometryContext, instrument: InstrumentContext):
     all_dqx_m = np.array(list(map(lambda i: kf_resol_mcstas(geo_ctx=geo_ctx, instrument=instrument, index_now=i,
                                                             index_nearest=1 if i == 0 else i - 1)[0],
-                                  range(geo_ctx.polar_angles.shape[0]))))
+                                  range(geo_ctx.pol_angles.shape[0]))))
     all_dqy_m = np.array(list(map(lambda i: kf_resol_mcstas(geo_ctx=geo_ctx, instrument=instrument, index_now=i,
                                                             index_nearest=1 if i == 0 else i - 1)[1],
-                                  range(geo_ctx.polar_angles.shape[0]))))
+                                  range(geo_ctx.pol_angles.shape[0]))))
     all_dqz_m = np.array(list(map(lambda i: kf_resol_mcstas(geo_ctx=geo_ctx, instrument=instrument, index_now=i,
                                                             index_nearest=1 if i == 0 else i - 1)[2],
-                                  range(geo_ctx.polar_angles.shape[0]))))
+                                  range(geo_ctx.pol_angles.shape[0]))))
     return all_dqx_m, all_dqy_m, all_dqz_m
 
 
@@ -361,9 +367,9 @@ def distances_fd_as(geo_ctx: GeometryContext, index):
 
 def plot_distance_fd_as(geo_ctx: GeometryContext):
     ratio_fd_af = np.array(
-        list(map(lambda i: distances_fd_as(geo_ctx=geo_ctx, index=i), range(geometryctx.polar_angles.shape[0]))))
+        list(map(lambda i: distances_fd_as(geo_ctx=geo_ctx, index=i), range(geometryctx.pol_angles.shape[0]))))
     fig, ax = plt.subplots()
-    ax.plot(np.rad2deg(geometryctx.polar_angles), ratio_fd_af)
+    ax.plot(np.rad2deg(geometryctx.pol_angles), ratio_fd_af)
     # plotting_format(ax=ax, grid=True)
     ax.tick_params(axis="x", direction="in")
     ax.tick_params(axis="y", direction="in")
@@ -397,6 +403,8 @@ def wavenumbers_psd(geo_ctx: GeometryContext):
 
 geometryctx = GeometryContext()
 instrumentctx = InstrumentContext()
+
+
 # print("The index of the segment in the middle of the polar angle range: {:d}".format(int(geometryctx.pol_middle_index + 1)))
 
 # plot_geometry(geo_ctx=geometryctx, instrument=instrumentctx)
@@ -447,20 +455,20 @@ def wavevector_transfer_rotation(rot_angle, wavevector_transfer):
 #     data_qz = qz
 #     magnon_de = np.array(list(map(lambda j: np.array(list(
 #         map(lambda i: magnon_energy(wavevector_transfer=np.array([data_qx[j, i], data_qy[j, i], data_qz[j, i]])),
-#             range(geometryctx.azi_angles.shape[0])))), range(pol_1d.shape[0])))) * 1e3 / CONVERSION_JOULE_PER_EV
+#             range(geometryctx.azi_angles.shape[0])))), range(geo_ctx.polar_angles.shape[0])))) * 1e3 / CONVERSION_JOULE_PER_EV
 #     if term == TERM_MAGNON:
 #         calculated = magnon_de
 #     elif term == TERM_SCATTERING:
 #         calculated = np.array(list(map(lambda j: np.array(list(
 #             map(lambda i: magnon_scattered(scattering_de=data_de[j, i], magnon_de=magnon_de[j, i], tol=0.05),
-#                 range(geometryctx.azi_angles.shape[0])))), range(pol_1d.shape[0]))))
+#                 range(geometryctx.azi_angles.shape[0])))), range(geo_ctx.polar_angles.shape[0]))))
 #     elif term == TERM_CROSSSECTION:
 #         calculated = np.array(list(map(lambda i: np.array(list(
 #             map(lambda j: scatt_cross_qxqyde(qq_x=data_qx[i, j], qq_y=data_qy[i, j], hw=hw,
 #                                              ki=geometryctx.wavenumber_in,
-#                                              qq_z=data_qz[i, j], kf=geometryctx.wavenumbers_out[i], pol_angle=pol_1d[i],
+#                                              qq_z=data_qz[i, j], kf=geometryctx.wavenumbers_out[i], pol_angle=geo_ctx.polar_angles[i],
 #                                              mushroom=True),
-#                 range(geometryctx.azi_angles.shape[0])))), range(pol_1d.shape[0]))))
+#                 range(geometryctx.azi_angles.shape[0])))), range(geo_ctx.polar_angles.shape[0]))))
 #     else:
 #         raise RuntimeError("Invalid term given. Cannot calculate teh rotated signal.")
 #
@@ -491,38 +499,49 @@ def plot_etransfer(de_2d, energy_transfer):
         raise RuntimeError("Invalid energy transfer given")
     return de_2d
 
-def magnon_plot(geo_ctx: GeometryContext):
-    pol_1d = geo_ctx.polar_angles
-    kf_1d = geo_ctx.wavenumbers_out
-    plt.rcParams.update({'font.size': 12})
-    hw = 1.04e-3 * CONVERSION_JOULE_PER_EV  # energy transfer value for plotting
 
+def mushroom_wavevector_transfer(geo_ctx: GeometryContext):
+    mushroom_qx = np.array(list(map(lambda i: np.array(list(
+        map(lambda j: geo_ctx.wavevector_transfer(index_pol=i, index_azi=j)[0], range(geo_ctx.azi_angles.shape[0])))),
+                                    range(geo_ctx.pol_angles.shape[0]))))
+    mushroom_qy = np.array(list(map(lambda i: np.array(list(
+        map(lambda j: geo_ctx.wavevector_transfer(index_pol=i, index_azi=j)[1], range(geo_ctx.azi_angles.shape[0])))),
+                                    range(geo_ctx.pol_angles.shape[0]))))
+    mushroom_qz = np.array(list(map(lambda i: np.array(list(
+        map(lambda j: geo_ctx.wavevector_transfer(index_pol=i, index_azi=j)[2], range(geo_ctx.azi_angles.shape[0])))),
+                                    range(geo_ctx.pol_angles.shape[0]))))
+    return mushroom_qx, mushroom_qy, mushroom_qz
+
+
+def mushroom_energy_transfer(geo_ctx: GeometryContext):
+    return np.array(list(map(lambda i: np.array(list(map(
+        lambda j: PLANCKS_CONSTANT ** 2 * (geo_ctx.wavenumber_in ** 2 - geo_ctx.wavenumbers_out[i] ** 2) / (
+                2 * MASS_NEUTRON), range(geo_ctx.azi_angles.shape[0])))), range(geo_ctx.pol_angles.shape[0]))))
+
+
+def magnon_given_energy(geo_ctx: GeometryContext, hw=1.04e-3 * CONVERSION_JOULE_PER_EV, e_res=0.02):
+    """
+    calcute the magnon dispersion available in Mushroom at a given energy transfer.
+    x-axis: Qx, y-axis: Qy, colour map: intensity (scattering cross-section.
+    :param geo_ctx: geometrical information of Mushroom
+    :param hw: given value of the energy transfer
+    :param e_res: (relative) energy resolution
+    :return: plotted figure saved
+    """
     ki_vector = np.array([geo_ctx.wavenumber_in, 0, 0])
-    data_qx = np.array(list(map(lambda j: np.array(list(
-        map(lambda i: geo_ctx.wavevector_transfer(index_pol=j, index_azi=i)[0],
-            range(geo_ctx.azi_angles.shape[0])))),
-                                range(pol_1d.shape[0]))))
-    data_qy = np.array(list(map(lambda j: np.array(list(
-        map(lambda i: geo_ctx.wavevector_transfer(index_pol=j, index_azi=i)[1],
-            range(geo_ctx.azi_angles.shape[0])))),
-                                range(pol_1d.shape[0]))))
-    data_qz = np.array(list(map(lambda j: np.array(list(
-        map(lambda i: geo_ctx.wavevector_transfer(index_pol=j, index_azi=i)[2],
-            range(geo_ctx.azi_angles.shape[0])))),
-                                range(pol_1d.shape[0]))))
-    data_de = np.array(list(map(lambda j: np.array(list(map(
-        lambda i: PLANCKS_CONSTANT ** 2 * (geo_ctx.wavenumber_in ** 2 - geo_ctx.wavenumbers_out[j] ** 2) / (
-                2 * MASS_NEUTRON), range(geo_ctx.azi_angles.shape[0])))),
-                                range(pol_1d.shape[0]))))
-    if np.min(abs((hw - data_de) / hw)) > 0.02:
+
+    data_qx, data_qy, data_qz = mushroom_wavevector_transfer(geo_ctx=geo_ctx)
+    data_de = mushroom_energy_transfer(geo_ctx=geo_ctx)
+    if np.min(abs((hw - data_de) / hw)) > e_res:
         hw_alternative = data_de[np.argmin(abs(hw - data_de))]
         raise RuntimeError("Given energy transfer is not available, the closest value is {:.2f} meV".format(
             hw_alternative / CONVERSION_JOULE_PER_EV * 1e3))
     data_crosssection = np.array(list(map(lambda i: np.array(list(
         map(lambda j: scatt_cross_qxqyde(qq_x=data_qx[i, j], qq_y=data_qy[i, j], hw=hw, ki=geo_ctx.wavenumber_in,
-                                         qq_z=data_qz[i, j], kf=geo_ctx.wavenumbers_out[i], pol_angle=pol_1d[i],
+                                         qq_z=data_qz[i, j], kf=geo_ctx.wavenumbers_out[i],
+                                         pol_angle=geo_ctx.pol_angles[i],
                                          mushroom=True),
-            range(geo_ctx.azi_angles.shape[0])))), range(pol_1d.shape[0]))))
+            range(geo_ctx.azi_angles.shape[0])))), range(geo_ctx.pol_angles.shape[0]))))
 
     plot_qz = data2range(data_qz)
     # for rot in range(rotation_number):
@@ -530,10 +549,10 @@ def magnon_plot(geo_ctx: GeometryContext):
     rotation_number = 10 + 1
     # data_qx_rot = np.array(list(map(lambda i: np.array(list(
     #     map(lambda j: rotation_qxqy(rotation_step, data_qx[i, j], data_qy[i, j])[0],
-    #         range(geo_ctx.azi_angles.shape[0])))), range(pol_1d.shape[0]))))
+    #         range(geo_ctx.azi_angles.shape[0])))), range(geo_ctx.polar_angles.shape[0]))))
     # data_qy_rot = np.array(list(map(lambda i: np.array(list(
     #     map(lambda j: rotation_qxqy(rotation_step, data_qx[i, j], data_qy[i, j])[1],
-    #         range(geo_ctx.azi_angles.shape[0])))), range(pol_1d.shape[0]))))
+    #         range(geo_ctx.azi_angles.shape[0])))), range(geo_ctx.polar_angles.shape[0]))))
 
     # data_qx, data_qy = rotation_z(rotation_step, data_qx, data_qy)
     # plot_qx = data2range(data_qx)
@@ -551,7 +570,7 @@ def magnon_plot(geo_ctx: GeometryContext):
         #                               intensity=magnon_de)
         # # scatt_de = np.array(list(map(lambda j: np.array(list(
         # #     map(lambda i: magnon_scattered(scattering_de=data_de[j, i], magnon_de=magnon_de[j, i], tol=0.05),
-        # #         range(geo_ctx.azi_angles.shape[0])))), range(pol_1d.shape[0]))))
+        # #         range(geo_ctx.azi_angles.shape[0])))), range(geo_ctx.polar_angles.shape[0]))))
         # scatt_2d = dispersion_signal(range_x=plot_qx, range_y=plot_qy, data_x=data_qx, data_y=data_qy,
         #                              intensity=scatt_de)
         data_qx, data_qy, data_crosssection = rotation_calc(qx=data_qx, qy=data_qy, qz=data_qz, rot_angle=rotation_step,
@@ -573,7 +592,7 @@ def magnon_plot(geo_ctx: GeometryContext):
     cbar_scatt.set_label(r"Intensity")  # normalised to 1
     # # magnon_de = np.array(list(map(lambda j: np.array(list(
     # #     map(lambda i: magnon_energy(wavevector_transfer=np.array([data_qx[j, i], data_qy[j, i], data_qz[j, i]])),
-    # #         range(geo_ctx.azi_angles.shape[0])))), range(pol_1d.shape[0])))) * 1e3 / CONVERSION_JOULE_PER_EV
+    # #         range(geo_ctx.azi_angles.shape[0])))), range(geo_ctx.polar_angles.shape[0])))) * 1e3 / CONVERSION_JOULE_PER_EV
     #
     # # plot magnon from Mushroom Q-values without considering the energy conservation
     # # peak_2d = dispersion2intensity(range_x=plot_qx, range_y=plot_qy, data_x=data_qx, data_y=data_qy,
@@ -591,7 +610,7 @@ def magnon_plot(geo_ctx: GeometryContext):
     #
     # # scatt_de = np.array(list(map(lambda j: np.array(list(
     # #     map(lambda i: magnon_scattered(scattering_de=data_de[j, i], magnon_de=magnon_de[j, i], tol=0.05),
-    # #         range(geo_ctx.azi_angles.shape[0])))), range(pol_1d.shape[0]))))
+    # #         range(geo_ctx.azi_angles.shape[0])))), range(geo_ctx.polar_angles.shape[0]))))
     # # peak_2d = dispersion2intensity(range_x=plot_qx, range_y=plot_qy, data_x=data_qx, data_y=data_qy,
     # #                                intensity=scatt_de)
     # ax2.set_xlabel(r"$Q_x=k_{i,x}-k_{f,x}$ ($\AA^{-1}$)")
@@ -603,7 +622,7 @@ def magnon_plot(geo_ctx: GeometryContext):
     # fig2.tight_layout()
     # fig2.savefig("MagnonMushroom_QxQydE0.05_Rotated_{:d}_{:d}.png".format(rotation_number, int(np.rad2deg(rotation_step))))
     # plt.close(fig2)
-    #
+
     ax3.set_xlabel(r"$Q_x=k_{i,x}-k_{f,x}$ ($\AA^{-1}$)")
     ax3.set_ylabel(r"$Q_y=k_{i,y}-k_{f,y}$ ($\AA^{-1}$)")
     ax3.tick_params(axis="x", direction="in")
@@ -618,7 +637,7 @@ def magnon_plot(geo_ctx: GeometryContext):
     # fig, ax1 = plt.subplots()
     # scatt_de = np.array(list(map(lambda j: np.array(list(
     #     map(lambda i: magnon_scattered(scattering_de=data_de[j, i], magnon_de=magnon_de[j, i], tol=0.01),
-    #         range(geo_ctx.azi_angles.shape[0])))), range(pol_1d.shape[0]))))
+    #         range(geo_ctx.azi_angles.shape[0])))), range(geo_ctx.polar_angles.shape[0]))))
     # peak_2d = dispersion2intensity(range_x=plot_qx, range_y=plot_qy, data_x=data_qx, data_y=data_qy,
     #                                intensity=scatt_de)
     # cnt = ax1.scatter(x=qx_2d * 1e-10, y=qy_2d * 1e-10, c=peak_2d)
@@ -686,3 +705,80 @@ def magnon_plot(geo_ctx: GeometryContext):
     # fig.tight_layout(rect=[0, 0, 1, 0.95])
     # plt.savefig("Qxy-Qz-dE.png")
     # plt.close(fig)
+
+
+def rotation_axis(qx, qy, axis, rot_step, rot_number):
+    range_min, range_max = None, None
+    for i in range(rot_number):
+        qx, qy = rotation_z(rot_angle=rot_step, old_x=qx, old_y=qy)
+        if axis == AXIS_X:
+            data = qx
+        elif axis == AXIS_Y:
+            data = qy
+        else:
+            raise RuntimeError("Wrong axis given.")
+        if i == 0:
+            range_min, range_max = np.min(data), np.max(data)
+        else:
+            range_min = min(range_min, np.min(data))
+            range_max = max(range_max, np.max(data))
+    plot_range = np.linspace(range_min, range_max, num=1000)
+    return plot_range
+
+
+def mushroom_magnon_crosssection(geo_ctx: GeometryContext):
+    ki_vector = np.array([geo_ctx.wavenumber_in, 0, 0])
+    return np.array(list(map(lambda i: np.array(list(map(lambda j: scatt_cross_kikf(ki_vector=ki_vector,
+                                                                                    kf_vector=wavenumber_vector(
+                                                                                        wavenumber=
+                                                                                        geo_ctx.wavenumbers_out[i],
+                                                                                        azi_angle=geo_ctx.azi_angles[j],
+                                                                                        pol_angle=geo_ctx.pol_angles[
+                                                                                            i])),
+                                                         range(geo_ctx.azi_angles.shape[0])))),
+                             range(geo_ctx.pol_angles.shape[0]))))
+
+
+def magnon_dispersion(geo_ctx: GeometryContext, axis):
+    rotation_step = np.deg2rad(10)
+    rotation_number = 10 + 1
+    data_qx, data_qy, data_qz = mushroom_wavevector_transfer(geo_ctx=geo_ctx)
+    data_de = mushroom_energy_transfer(geo_ctx=geo_ctx)
+    data_crosssection = mushroom_magnon_crosssection(geo_ctx=geo_ctx)
+
+    if axis == AXIS_X:
+        data_x = data_qx
+    elif axis == AXIS_Y:
+        data_x = data_qy
+    elif axis == AXIS_Z:
+        data_x = data_qz
+    else:
+        raise RuntimeError("Wrong axis given.")
+    if axis in AXES:
+        plot_x = rotation_axis(qx=data_qx, qy=data_qy, axis=axis, rot_step=rotation_step, rot_number=rotation_number)
+    else:
+        raise RuntimeError("Wrong axis given.")
+    data_y = data_de
+    plot_y = np.linspace(np.min(data_y), np.max(data_y), num=1000)
+    plot_x2d, plot_y2d = np.meshgrid(plot_x, plot_y)
+
+    crosssection_2d = dispersion_signal(range_x=plot_x, range_y=plot_y, data_x=data_x, data_y=data_y,
+                                        intensity=data_crosssection)
+    fig, ax = plt.subplots()
+    cnt_crosssection = ax.scatter(plot_x2d * 1e-10, plot_y2d * 1e3 / CONVERSION_JOULE_PER_EV, c=crosssection_2d)
+    cbar_scatt = fig.colorbar(cnt_crosssection, ax=ax)
+    cbar_scatt.set_label(r"Intensity")  # normalised to 1
+    ax.set_xlabel(r"Wavevector transfer, {:s}-component $Q_{:s}=k_{{i,}}$".format(axis, axis) + r"$_{:s}$".format(
+        axis) + r"$-k_{{f,}}$" + r"$_{:s}$".format(axis) + r"($\AA^{{-1}}$)")
+    ax.set_ylabel(r"Energy transfer $\hbar\omega=E_{i}-E_{f}$ (meV)")
+    ax.tick_params(axis="x", direction="in")
+    ax.tick_params(axis="y", direction="in")
+    ax.set_title(r"Magnon dispersion")
+    fig.tight_layout()
+    fig.savefig("MagnonMushroom_Q{:s}hw.pdf".format(axis))
+    plt.close(fig)
+
+
+magnon_dispersion(geometryctx, axis=AXIS_X)
+magnon_dispersion(geometryctx, axis=AXIS_Y)
+magnon_dispersion(geometryctx, axis=AXIS_Z)

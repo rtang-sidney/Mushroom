@@ -191,9 +191,9 @@ def dispersion_signal(range_x, range_y, data_x, data_y, intensity):
         pass
     else:
         raise RuntimeError("Invalid shapes of x and y data given.")
-    # inten_new_2d[y_index, x_index] = 0
-    # np.add.at(inten_new_2d, (y_index, x_index), intensity)
-    inten_new_2d[y_index, x_index] = intensity
+    inten_new_2d[y_index, x_index] = 0
+    np.add.at(inten_new_2d, (y_index, x_index), intensity)
+    # inten_new_2d[y_index, x_index] = intensity
 
     # x_index, y_index = np.meshgrid(x_index, y_index)
     return inten_new_2d
@@ -208,14 +208,6 @@ def data2range(data, number_points=None):
 def wavenumber_vector(wavenumber, azi_angle, pol_angle):
     return wavenumber * np.array(
         [np.cos(pol_angle) * np.cos(azi_angle), np.cos(pol_angle) * np.sin(azi_angle), np.sin(pol_angle)])
-
-
-def plotting_format(ax, grid=True):
-    plt.rcParams.update({'font.size': 15})
-    ax.tick_params(axis="x", direction="in")
-    ax.tick_params(axis="y", direction="in")
-    if grid is True:
-        ax.grid()
 
 
 def rotation_z(rot_angle, old_x, old_y):
@@ -236,3 +228,4 @@ def dirac_delta_approx(x, x0, resol):
     """
     a = resol * x0
     return np.exp(-((x - x0) / a) ** 2) / (abs(a) * np.sqrt(np.pi))
+

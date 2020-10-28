@@ -3,7 +3,7 @@ import numpy as np
 from geometry_context import GeometryContext
 from helper import wavelength_to_eV, points_distance, vector_bisector, InstrumentContext, points_to_vector, \
     points_to_slope_radian, unit_vector, vector_project_a2b, deg2min, points_bisecting_line, line_to_y, \
-    PLANCKS_CONSTANT, MASS_NEUTRON, CONVERSION_JOULE_PER_EV, data2range, dispersion_signal, rotation_z, \
+    PLANCKS_CONSTANT, MASS_NEUTRON, CONVERSION_JOULE_PER_EV, data2range, dispersion_signal, rotation_around_z, \
     wavenumber_vector
 from magnon import magnon_energy, scatt_cross_qxqyde, scatt_cross_kikf
 
@@ -445,7 +445,7 @@ def magnon_scattered(scattering_de, magnon_de, tol=0.1):
 
 
 def wavevector_transfer_rotation(rot_angle, wavevector_transfer):
-    new_qx, new_qy = rotation_z(rot_angle=rot_angle, old_x=wavevector_transfer[0], old_y=wavevector_transfer[1])
+    new_qx, new_qy = rotation_around_z(rot_angle=rot_angle, old_x=wavevector_transfer[0], old_y=wavevector_transfer[1])
     wavevector_transfer[:2] = new_qx, new_qy
     return wavevector_transfer
 
@@ -478,7 +478,7 @@ def wavevector_transfer_rotation(rot_angle, wavevector_transfer):
 def plot_range_qxqy(qx, qy, rot_step, rot_number):
     qx_min, qx_max, qy_min, qy_max = None, None, None, None
     for i in range(rot_number):
-        qx, qy = rotation_z(rot_angle=rot_step, old_x=qx, old_y=qy)
+        qx, qy = rotation_around_z(rot_angle=rot_step, old_x=qx, old_y=qy)
         if i == 0:
             qx_min, qx_max = np.min(qx), np.max(qx)
             qy_min, qy_max = np.min(qy), np.max(qy)
@@ -707,10 +707,10 @@ def magnon_given_energy(geo_ctx: GeometryContext, hw=1.04e-3 * CONVERSION_JOULE_
     # plt.close(fig)
 
 
-def rotation_axis(qx, qy, axis, rot_step, rot_number):
+def rotation_axis_range(qx, qy, axis, rot_step, rot_number):
     range_min, range_max = None, None
     for i in range(rot_number):
-        qx, qy = rotation_z(rot_angle=rot_step, old_x=qx, old_y=qy)
+        qx, qy = rotation_around_z(rot_angle=rot_step, old_x=qx, old_y=qy)
         if axis == AXIS_X:
             data = qx
         elif axis == AXIS_Y:
@@ -746,26 +746,38 @@ def magnon_dispersion(geo_ctx: GeometryContext, axis):
     data_de = mushroom_energy_transfer(geo_ctx=geo_ctx)
     data_crosssection = mushroom_magnon_crosssection(geo_ctx=geo_ctx)
 
+    data_y = data_de
+    plot_y = np.linspace(np.min(data_y), np.max(data_y), num=1000)
+    if axis in AXES:
+        plot_x = rotation_axis_range(qx=data_qx, qy=data_qy, axis=axis, rot_step=rotation_step,
+                                     rot_number=rotation_number)
+    else:
+        raise RuntimeError("Wrong axis given.")
+    plot_x2d, plot_y2d = np.meshgrid(plot_x, plot_y)
+    fig, ax = plt.subplots()
+
     if axis == AXIS_X:
         data_x = data_qx
     elif axis == AXIS_Y:
         data_x = data_qy
-    elif axis == AXIS_Z:
+    else:
         data_x = data_qz
-    else:
-        raise RuntimeError("Wrong axis given.")
-    if axis in AXES:
-        plot_x = rotation_axis(qx=data_qx, qy=data_qy, axis=axis, rot_step=rotation_step, rot_number=rotation_number)
-    else:
-        raise RuntimeError("Wrong axis given.")
-    data_y = data_de
-    plot_y = np.linspace(np.min(data_y), np.max(data_y), num=1000)
-    plot_x2d, plot_y2d = np.meshgrid(plot_x, plot_y)
-
     crosssection_2d = dispersion_signal(range_x=plot_x, range_y=plot_y, data_x=data_x, data_y=data_y,
                                         intensity=data_crosssection)
-    fig, ax = plt.subplots()
-    cnt_crosssection = ax.scatter(plot_x2d * 1e-10, plot_y2d * 1e3 / CONVERSION_JOULE_PER_EV, c=crosssection_2d)
+    for i in range(rotation_number):
+        data_qx, data_qy = rotation_around_z(rot_angle=rotation_step, old_x=data_qx, old_y=data_qy)
+        if axis == AXIS_X:
+            data_x = data_qx
+        elif axis == AXIS_Y:
+            data_x = data_qy
+        else:
+            data_x = data_qz
+        crosssection_new = dispersion_signal(range_x=plot_x, range_y=plot_y, data_x=data_x, data_y=data_y,
+                                             intensity=data_crosssection)
+        crosssection_2d = np.where(np.isfinite(crosssection_2d),
+                                   np.where(np.isfinite(crosssection_new), crosssection_2d + crosssection_new,
+                                            crosssection_2d), crosssection_new)
+    cnt_crosssection = ax.contourf(plot_x2d * 1e-10, plot_y2d * 1e3 / CONVERSION_JOULE_PER_EV, crosssection_2d)
     cbar_scatt = fig.colorbar(cnt_crosssection, ax=ax)
     cbar_scatt.set_label(r"Intensity")  # normalised to 1
     ax.set_xlabel(r"Wavevector transfer, {:s}-component $Q_{:s}=k_{{i,}}$".format(axis, axis) + r"$_{:s}$".format(
@@ -778,7 +790,6 @@ def magnon_dispersion(geo_ctx: GeometryContext, axis):
     fig.savefig("MagnonMushroom_Q{:s}hw.pdf".format(axis))
     plt.close(fig)
 
-
 magnon_dispersion(geometryctx, axis=AXIS_X)
 magnon_dispersion(geometryctx, axis=AXIS_Y)
-magnon_dispersion(geometryctx, axis=AXIS_Z)
+# magnon_dispersion(geometryctx, axis=AXIS_Z)

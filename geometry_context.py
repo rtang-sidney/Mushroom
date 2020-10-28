@@ -1,6 +1,6 @@
 import numpy as np
 from helper import points_distance, vector_bisector, ZERO_TOL, points_to_line, points_to_vector, lines_intersect, \
-    unit_vector, InstrumentContext, angle_vectors, wavenumber_vector, rotation_z
+    unit_vector, InstrumentContext, angle_vectors, wavenumber_vector, rotation_around_z
 
 SOLAR_RANGE = np.deg2rad(60)  # the range of the solar angles covered by the analyser
 CRYO_RADIUS = 0.4  # m, reserving the space for a cryostat
@@ -211,5 +211,5 @@ class GeometryContext(object):
         azi_rad = self.azi_angles[index_azi]
         kf_vector = wavenumber_vector(wavenumber=kf, azi_angle=azi_rad, pol_angle=pol_rad)
         q_vector = ki_vector - kf_vector
-        q_vector[:2] = rotation_z(rot_angle=rot_rad, old_x=q_vector[0], old_y=q_vector[1])
+        q_vector[:2] = rotation_around_z(rot_angle=rot_rad, old_x=q_vector[0], old_y=q_vector[1])
         return q_vector

@@ -178,7 +178,7 @@ def distance_point2line(point, line):
 
 def dispersion_signal(range_x, range_y, data_x, data_y, intensity):
     print(range_x.shape, range_y.shape, data_x.shape, data_y.shape, intensity.shape)
-    inten_new_2d = np.full((range_y.shape[0], range_x.shape[0]), None)
+    inten_new_2d = np.full((range_y.shape[0], range_x.shape[0]), np.nan)
     x_index = np.searchsorted(range_x, data_x)
     y_index = np.searchsorted(range_y, data_y)
     if len(x_index.shape) == len(y_index.shape) == 2:
@@ -210,7 +210,7 @@ def wavenumber_vector(wavenumber, azi_angle, pol_angle):
         [np.cos(pol_angle) * np.cos(azi_angle), np.cos(pol_angle) * np.sin(azi_angle), np.sin(pol_angle)])
 
 
-def rotation_z(rot_angle, old_x, old_y):
+def rotation_around_z(rot_angle, old_x, old_y):
     new_x = old_x * np.cos(rot_angle) - old_y * np.sin(rot_angle)
     new_y = old_x * np.sin(rot_angle) + old_y * np.cos(rot_angle)
     return new_x, new_y

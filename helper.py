@@ -228,4 +228,3 @@ def dirac_delta_approx(x, x0, resol):
     """
     a = resol * x0
     return np.exp(-((x - x0) / a) ** 2) / (abs(a) * np.sqrt(np.pi))
-

@@ -176,8 +176,8 @@ def distance_point2line(point, line):
     return np.abs((a * x0 + b * y0 + c) / np.linalg.norm([a, b]))
 
 
-def dispersion_signal(range_x, range_y, data_x, data_y, intensity):
-    print(range_x.shape, range_y.shape, data_x.shape, data_y.shape, intensity.shape)
+def dispersion_signal(range_x, range_y, data_x, data_y, intensity=None, energy=None):
+    # print(range_x.shape, range_y.shape, data_x.shape, data_y.shape, intensity.shape)
     inten_new_2d = np.full((range_y.shape[0], range_x.shape[0]), np.nan)
     x_index = np.searchsorted(range_x, data_x)
     y_index = np.searchsorted(range_y, data_y)
@@ -191,11 +191,16 @@ def dispersion_signal(range_x, range_y, data_x, data_y, intensity):
         pass
     else:
         raise RuntimeError("Invalid shapes of x and y data given.")
-    inten_new_2d[y_index, x_index] = 0
-    np.add.at(inten_new_2d, (y_index, x_index), intensity)
-    # inten_new_2d[y_index, x_index] = intensity
 
-    # x_index, y_index = np.meshgrid(x_index, y_index)
+    if intensity is not None and energy is not None:
+        raise RuntimeError("Only either of the intensity or the energy-transfer can be dealt with.")
+    elif intensity is not None:
+        inten_new_2d[y_index, x_index] = 0
+        np.add.at(inten_new_2d, (y_index, x_index), intensity)
+    elif energy is not None:
+        inten_new_2d[y_index, x_index] = energy
+    else:
+        raise RuntimeError("Signal not provided. Give in either the intensity or the energy transfer.")
     return inten_new_2d
 
 

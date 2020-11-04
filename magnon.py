@@ -66,12 +66,16 @@ def qyqz_to_kf(geo_ctx: GeometryContext, de, qy, qz, acute=True):
         return np.empty(3)
 
 
-def magnon_energy(wavevector_transfer, latt_const=10 * 1e-10, j=0.1 * 1e-3 * CONVERSION_JOULE_PER_EV, s=1):
+def stiffness_constant(latt_const, j=0.1 * 1e-3 * CONVERSION_JOULE_PER_EV, s=1):
+    return 2 * j * s * latt_const ** 2
+
+
+def magnon_energy(wavevector_transfer,latt_const=10 * 1e-10):
     reci_const = 2 * np.pi / latt_const
     hkl = np.round(wavevector_transfer / reci_const)
     # print(scattering_vector, reci_const, hkl)
     magnon_vector = wavevector_transfer - hkl * reci_const
-    dd = 2 * j * s * latt_const ** 2
+    dd = stiffness_constant(latt_const)
     return dd * np.linalg.norm(magnon_vector) ** 2
 
 
@@ -131,4 +135,3 @@ def scatt_cross_kikf(ki_vector, kf_vector, temperature=300, latt_const=10e-10, j
     energy_loss = dirac_delta_approx(hw, magnon_hw, resol) * (n_q + 1)
     energy_gain = dirac_delta_approx(hw, -magnon_hw, resol) * n_q
     return (energy_loss + energy_gain)
-

@@ -5,10 +5,10 @@ from helper import wavelength_to_eV, points_distance, vector_bisector, Instrumen
     points_to_slope_radian, unit_vector, vector_project_a2b, deg2min, points_bisecting_line, line_to_y, \
     PLANCKS_CONSTANT, MASS_NEUTRON, CONVERSION_JOULE_PER_EV, data2range, dispersion_signal, rotation_around_z, \
     wavenumber_vector
-from magnon import magnon_energy, scatt_cross_qxqyde, scatt_cross_kikf
+from magnon import magnon_energy, scatt_cross_qxqyde, scatt_cross_kikf, stiffness_constant
 from mpl_toolkits.mplot3d import Axes3D
 
-plt.rcParams.update({'font.size': 12})
+plt.rcParams.update({'font.size': 16})
 
 """
 [Paper1]: Demmel2014 http://dx.doi.org/10.1016/j.nima.2014.09.019
@@ -18,9 +18,12 @@ plt.rcParams.update({'font.size': 12})
 E_RESOL = 0.02  # energy resolution (relative uncertainty)
 # Comment from Alex <3
 # line: ax + by + c = 0 -> (a, b, c)
-TERM_MAGNON = "magnon"
+TERM_MAGNON = "Magnon"
 TERM_SCATTERING = "scattering"  # energy conservation at the scattering
 TERM_CROSSSECTION = "crosssection"  # Delta function is approximated by Gaussian function with intensity distribution
+TERM_MUSHROOM = "Mushroom"
+TERM_MAGNONMUSHROOM = "MagnonMushroom"
+CALC_TERMS = [TERM_MAGNON, TERM_MUSHROOM, TERM_MAGNONMUSHROOM]
 
 AXIS_X = "x"
 AXIS_Y = "y"
@@ -28,12 +31,22 @@ AXIS_Z = "z"
 AXES = [AXIS_X, AXIS_Y, AXIS_Z]
 
 ROTATION_STEP = np.deg2rad(1)  # sample rotation step size
-ROTATION_NUMBER = 10  # number of steps
+ROTATION_NUMBERS = [10, 30, 90]  # number of steps
+# ROTATION_NUMBER = 10  # number of steps
 
-PLOT_NUMBER = 100
+PLOT_NUMBER = 300
+
+DIM_2 = "2d"
+DIM_3 = "3d"
+DIMENSIONS = [DIM_2, DIM_3]
+
+EXTENSION_PDF = "pdf"
+EXTENSION_PNG = "png"
 
 
 # def get_analyser_angular_spread(geo_ctx: GeometryContext, sample, analyser_point, focus_point):
+
+
 def monochromator_angular_spread(divergence_in, divergence_out, mosaic):
     # For the formula see [Paper1]
     # alpha_i, alpha_f, eta = divergence_in, divergence_out, mosaic
@@ -572,194 +585,78 @@ def mushroom_magnon_crosssection(geo_ctx: GeometryContext):
                              range(geo_ctx.pol_angles.shape[0]))))
 
 
-def magnon_dispersion_Qihw(geo_ctx: GeometryContext, axis):
+def dispersion_calc_plot(geo_ctx: GeometryContext, term, dim, extension):
     data_qx, data_qy, data_qz = mushroom_wavevector_transfer(geo_ctx=geo_ctx)
-    data_de = mushroom_energy_transfer(geo_ctx=geo_ctx)
-    data_crosssection = mushroom_magnon_crosssection(geo_ctx=geo_ctx)
-
-    data_y = data_de
-    plot_y = np.linspace(np.min(data_y), np.max(data_y), num=PLOT_NUMBER)
-    if axis in AXES:
-        plot_x = rotation_axis_range(qx=data_qx, qy=data_qy, axis=axis, rot_step=ROTATION_STEP,
-                                     rot_number=ROTATION_NUMBER)
-    else:
-        raise RuntimeError("Wrong axis given.")
+    plot_x, plot_y = rotation_axis_range(qx=data_qx, qy=data_qy, rot_step=ROTATION_STEP, rot_number=ROTATION_NUMBER)
     plot_x2d, plot_y2d = np.meshgrid(plot_x, plot_y)
-    fig, ax = plt.subplots()
 
-    if axis == AXIS_X:
-        data_x = data_qx
-    elif axis == AXIS_Y:
-        data_x = data_qy
-    else:
-        data_x = data_qz
-    crosssection_2d = dispersion_signal(range_x=plot_x, range_y=plot_y, data_x=data_x, data_y=data_y,
-                                        intensity=data_crosssection)
-    for i in range(1, ROTATION_NUMBER + 1):
-        data_qx, data_qy = rotation_around_z(rot_angle=ROTATION_STEP, old_x=data_qx, old_y=data_qy)
-        if axis == AXIS_X:
-            data_x = data_qx
-        elif axis == AXIS_Y:
-            data_x = data_qy
+    def energy_transfer(geo_ctx: GeometryContext, term, data_qx, data_qy, data_qz):
+        if term == TERM_MAGNON:
+            magnon_de = np.array(list(map(lambda i: np.array(list(
+                map(lambda j: magnon_energy(
+                    wavevector_transfer=np.array([data_qx[i, j], data_qy[i, j], data_qz[i, j]])),
+                    range(data_qx.shape[1])))), range(data_qx.shape[0]))))
+            return magnon_de
+        elif term == TERM_MUSHROOM:
+            data_de = mushroom_energy_transfer(geo_ctx=geo_ctx)
+            return data_de
+        elif term == TERM_MAGNONMUSHROOM:
+            data_de = mushroom_energy_transfer(geo_ctx=geo_ctx)
+            magnon_de = np.array(list(map(lambda i: np.array(list(
+                map(lambda j: magnon_energy(
+                    wavevector_transfer=np.array([data_qx[i, j], data_qy[i, j], data_qz[i, j]])),
+                    range(data_qx.shape[1])))), range(data_qx.shape[0]))))
+            scattered_de = np.array(list(map(lambda i: np.array(list(
+                map(lambda j: magnon_scattered(scattering_de=data_de[i, j], magnon_de=magnon_de[i, j]),
+                    range(data_qx.shape[1])))), range(data_qx.shape[0]))))
+            return scattered_de
         else:
-            data_x = data_qz
-        crosssection_new = dispersion_signal(range_x=plot_x, range_y=plot_y, data_x=data_x, data_y=data_y,
-                                             intensity=data_crosssection)
-        crosssection_2d = np.where(np.isfinite(crosssection_2d),
-                                   np.where(np.isfinite(crosssection_new), crosssection_2d + crosssection_new,
-                                            crosssection_2d), crosssection_new)
-    cnt_crosssection = ax.scatter(plot_x2d * 1e-10, plot_y2d * 1e3 / CONVERSION_JOULE_PER_EV, c=crosssection_2d)
-    # cnt_crosssection = ax.contour(plot_x2d * 1e-10, plot_y2d * 1e3 / CONVERSION_JOULE_PER_EV, crosssection_2d)
-    cbar_scatt = fig.colorbar(cnt_crosssection, ax=ax)
-    cbar_scatt.set_label(r"Intensity")  # normalised to 1
-    ax.set_xlabel(r"Wavevector transfer, {:s}-component $Q_{:s}=k_{{i,}}$".format(axis, axis) + r"$_{:s}$".format(
-        axis) + r"$-k_{{f,}}$" + r"$_{:s}$".format(axis) + r"($\AA^{{-1}}$)")
-    ax.set_ylabel(r"Energy transfer $\hbar\omega=E_{i}-E_{f}$ (meV)")
-    ax.tick_params(axis="x", direction="in")
-    ax.tick_params(axis="y", direction="in")
-    ax.set_title(r"Magnon dispersion")
-    fig.tight_layout()
-    fig.savefig("MagnonMushroom_Q{:s}hw.pdf".format(axis))
-    plt.close(fig)
+            raise ValueError("Invalid term to define the dispersion.")
 
-
-def magnon_dispersion_Qijhw(geo_ctx: GeometryContext):
-    data_qx, data_qy, data_qz = mushroom_wavevector_transfer(geo_ctx=geo_ctx)
-    data_de = mushroom_energy_transfer(geo_ctx=geo_ctx)
-    # data_crosssection = mushroom_magnon_crosssection(geo_ctx=geo_ctx)
-    plot_x, plot_y = rotation_axis_range(qx=data_qx, qy=data_qy, rot_step=ROTATION_STEP, rot_number=ROTATION_NUMBER)
-    plot_x2d, plot_y2d = np.meshgrid(plot_x, plot_y)
-    magnon_de = np.array(list(map(lambda i: np.array(list(
-        map(lambda j: magnon_energy(wavevector_transfer=np.array([data_qx[i, j], data_qy[i, j], data_qz[i, j]])),
-            range(data_qx.shape[1])))), range(data_qx.shape[0]))))
-    scattered_de = np.array(list(map(lambda i: np.array(list(
-        map(lambda j: magnon_scattered(scattering_de=data_de[i, j], magnon_de=magnon_de[i, j]),
-            range(data_qx.shape[1])))), range(data_qx.shape[0]))))
-
-    # fig = plt.figure()
-    # ax = fig.add_subplot(111, projection='3d')
-    de_2d = dispersion_signal(range_x=plot_x, range_y=plot_y, data_x=data_qx, data_y=data_qy, energy=scattered_de)
-    for r in range(1, ROTATION_NUMBER + 1):
-        data_qx, data_qy = rotation_around_z(rot_angle=ROTATION_STEP, old_x=data_qx, old_y=data_qy)
-        magnon_de = np.array(list(map(lambda i: np.array(list(
-            map(lambda j: magnon_energy(wavevector_transfer=np.array([data_qx[i, j], data_qy[i, j], data_qz[i, j]])),
-                range(data_qx.shape[1])))), range(data_qx.shape[0]))))
-        scattered_de = np.array(list(map(lambda i: np.array(list(
-            map(lambda j: magnon_scattered(scattering_de=data_de[i, j], magnon_de=magnon_de[i, j]),
-                range(data_qx.shape[1])))), range(data_qx.shape[0]))))
-        de_new = dispersion_signal(range_x=plot_x, range_y=plot_y, data_x=data_qx, data_y=data_qy,
-                                   energy=scattered_de)
-        de_2d = np.where(np.isfinite(de_2d), de_2d, de_new)
-
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
-    # fig, ax = plt.subplots()
-    # plt.axis("equal")
-    # cnt_crosssection = ax.scatter(plot_x2d * 1e-10, plot_y2d * 1e-10, c=de_2d * 1e3 / CONVERSION_JOULE_PER_EV)
-    cnt_crosssection = ax.scatter3D(plot_x2d.flatten() * 1e-10, plot_y2d.flatten() * 1e-10,
-                                    de_2d.flatten() * 1e3 / CONVERSION_JOULE_PER_EV,
-                                    c=de_2d.flatten() * 1e3 / CONVERSION_JOULE_PER_EV)
-    # cnt_crosssection = ax.contourf(plot_x2d * 1e-10, plot_y2d * 1e-10, de_2d * 1e3 / CONVERSION_JOULE_PER_EV)
-    cbar_scatt = fig.colorbar(cnt_crosssection, ax=ax)
-    cbar_scatt.set_label(r"Energy transfer $\hbar\omega=E_{i}-E_{f}$ (meV)")  # normalised to 1
-    ax.set_xlabel(r"$Q_x=k_{i,x}-k_{f,x}$ ($\AA^{-1}$)")
-    ax.set_ylabel(r"$Q_y=k_{i,y}-k_{f,y}$ ($\AA^{-1}$)")
-    ax.tick_params(axis="x", direction="in")
-    ax.tick_params(axis="y", direction="in")
-    ax.set_title(r"Sample Rotation stepsize {:.0f}°, {:d} times".format(np.rad2deg(ROTATION_STEP), ROTATION_NUMBER))
-    fig.tight_layout()
-    filename = "MagnonMushroom_QxQyhw_Rot{:d}_3d.png".format(ROTATION_NUMBER)
-    fig.savefig(filename)
-    # print("Plot saved: {:s}".format(filename))
-    plt.show()
-    plt.close(fig)
-
-
-def only_magnon(geo_ctx: GeometryContext):
-    data_qx, data_qy, data_qz = mushroom_wavevector_transfer(geo_ctx=geo_ctx)
-    plot_x, plot_y = rotation_axis_range(qx=data_qx, qy=data_qy, rot_step=ROTATION_STEP, rot_number=ROTATION_NUMBER)
-    plot_x2d, plot_y2d = np.meshgrid(plot_x, plot_y)
-    # magnon_2d = np.array(list(map(lambda i: np.array(list(
-    #     map(lambda j: magnon_energy(wavevector_transfer=np.array([plot_x2d[i, j], plot_y2d[i, j], 0])),
-    #         range(plot_x2d.shape[1])))), range(plot_x2d.shape[0]))))
-    magnon_de = np.array(list(map(lambda i: np.array(list(
-        map(lambda j: magnon_energy(wavevector_transfer=np.array([data_qx[i, j], data_qy[i, j], data_qz[i, j]])),
-            range(data_qx.shape[1])))), range(data_qx.shape[0]))))
-
-    de_2d = dispersion_signal(range_x=plot_x, range_y=plot_y, data_x=data_qx, data_y=data_qy, energy=magnon_de)
-    for r in range(1, ROTATION_NUMBER + 1):
-        data_qx, data_qy = rotation_around_z(rot_angle=ROTATION_STEP, old_x=data_qx, old_y=data_qy)
-        magnon_de = np.array(list(map(lambda i: np.array(list(
-            map(lambda j: magnon_energy(wavevector_transfer=np.array([data_qx[i, j], data_qy[i, j], data_qz[i, j]])),
-                range(data_qx.shape[1])))), range(data_qx.shape[0]))))
-        de_new = dispersion_signal(range_x=plot_x, range_y=plot_y, data_x=data_qx, data_y=data_qy, energy=magnon_de)
-        de_2d = np.where(np.isfinite(de_2d), de_2d, de_new)
-    # print(np.max(np.where(np.isfinite(de_2d))) * 1e3 / CONVERSION_JOULE_PER_EV)
-
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
-    cnt_crosssection = ax.scatter3D(plot_x2d.flatten() * 1e-10, plot_y2d.flatten() * 1e-10,
-                                    de_2d.flatten() * 1e3 / CONVERSION_JOULE_PER_EV,
-                                    c=de_2d.flatten() * 1e3 / CONVERSION_JOULE_PER_EV, marker=".")
-    # fig, ax = plt.subplots()
-    # plt.axis("equal")
-    # cnt_crosssection = ax.scatter(plot_x2d * 1e-10, plot_y2d * 1e-10, c=de_2d * 1e3 / CONVERSION_JOULE_PER_EV)
-    # cnt_crosssection = ax.contourf(plot_x2d * 1e-10, plot_y2d * 1e-10, de_2d * 1e3 / CONVERSION_JOULE_PER_EV)
-    cbar_scatt = fig.colorbar(cnt_crosssection, ax=ax)
-    cbar_scatt.set_label(r"Energy transfer $\hbar\omega=E_{i}-E_{f}$ (meV)")  # normalised to 1
-    ax.set_xlabel(r"$Q_x=k_{i,x}-k_{f,x}$ ($\AA^{-1}$)")
-    ax.set_ylabel(r"$Q_y=k_{i,y}-k_{f,y}$ ($\AA^{-1}$)")
-    ax.tick_params(axis="x", direction="in")
-    ax.tick_params(axis="y", direction="in")
-    ax.set_title(r"Sample Rotation stepsize {:.0f}°, {:d} times".format(np.rad2deg(ROTATION_STEP), ROTATION_NUMBER))
-    fig.tight_layout()
-    filename = "Magnon_QxQyhw_Rot{:d}_3d.svg".format(ROTATION_NUMBER)
-    fig.savefig(filename)
-    print("Plot saved: {:s}".format(filename))
-    # plt.show()
-    plt.close(fig)
-
-
-def only_mushroom(geo_ctx: GeometryContext):
-    data_qx, data_qy, data_qz = mushroom_wavevector_transfer(geo_ctx=geo_ctx)
-    plot_x, plot_y = rotation_axis_range(qx=data_qx, qy=data_qy, rot_step=ROTATION_STEP, rot_number=ROTATION_NUMBER)
-    plot_x2d, plot_y2d = np.meshgrid(plot_x, plot_y)
-    data_de = mushroom_energy_transfer(geo_ctx=geo_ctx)
-
-    de_2d = dispersion_signal(range_x=plot_x, range_y=plot_y, data_x=data_qx, data_y=data_qy, energy=data_de)
+    de_2d = dispersion_signal(range_x=plot_x, range_y=plot_y, data_x=data_qx, data_y=data_qy,
+                              energy=energy_transfer(geo_ctx=geo_ctx, term=term, data_qx=data_qx, data_qy=data_qy,
+                                                     data_qz=data_qz))
     for r in range(1, ROTATION_NUMBER + 1):
         data_qx, data_qy = rotation_around_z(rot_angle=ROTATION_STEP, old_x=data_qx, old_y=data_qy)
         # energy transfer from Mushroom itself is independent of the sample rotation
-        de_new = dispersion_signal(range_x=plot_x, range_y=plot_y, data_x=data_qx, data_y=data_qy, energy=data_de)
+        de_new = dispersion_signal(range_x=plot_x, range_y=plot_y, data_x=data_qx, data_y=data_qy,
+                                   energy=energy_transfer(geo_ctx=geo_ctx, term=term, data_qx=data_qx, data_qy=data_qy,
+                                                          data_qz=data_qz))
         de_2d = np.where(np.isfinite(de_2d), de_2d, de_new)
-    # print(np.max(np.where(np.isfinite(de_2d))) * 1e3 / CONVERSION_JOULE_PER_EV)
 
-    # fig = plt.figure()
-    # ax = fig.add_subplot(111, projection='3d')
-    fig, ax = plt.subplots()
-    # cnt_crosssection = ax.scatter(plot_x2d.flatten() * 1e-10, plot_y2d.flatten() * 1e-10,
-    #                               de_2d.flatten() * 1e3 / CONVERSION_JOULE_PER_EV,
-    #                               c=de_2d.flatten() * 1e3 / CONVERSION_JOULE_PER_EV, alpha=0.5)
-    cnt_crosssection = ax.scatter(plot_x2d * 1e-10, plot_y2d * 1e-10, c=de_2d * 1e3 / CONVERSION_JOULE_PER_EV)
-    # cnt_crosssection = ax.contourf(plot_x2d * 1e-10, plot_y2d * 1e-10, de_2d * 1e3 / CONVERSION_JOULE_PER_EV)
+    if dim == DIM_2:
+        fig, ax = plt.subplots()
+        plt.axis("equal")
+        cnt_crosssection = ax.scatter(plot_x2d * 1e-10, plot_y2d * 1e-10, c=de_2d * 1e3 / CONVERSION_JOULE_PER_EV,
+                                      marker=".")
+        if term in [TERM_MAGNON, TERM_MAGNONMUSHROOM]:
+            ax.text(2, 2, r"$D={:.1f}$ meV$\cdot\AA^2$".format(
+                stiffness_constant(latt_const=10 * 1e-10) * 1e3 * 1e20 / CONVERSION_JOULE_PER_EV))
+    elif dim == DIM_3:
+        fig = plt.figure()
+        ax = fig.add_subplot(111, projection='3d')
+        cnt_crosssection = ax.scatter(plot_x2d.flatten() * 1e-10, plot_y2d.flatten() * 1e-10,
+                                      de_2d.flatten() * 1e3 / CONVERSION_JOULE_PER_EV,
+                                      c=de_2d.flatten() * 1e3 / CONVERSION_JOULE_PER_EV, marker=".")
+        ax.tick_params(axis="z", direction="in")
+    else:
+        raise ValueError("The given dimension is invalid for plotting.")
     cbar_scatt = fig.colorbar(cnt_crosssection, ax=ax)
-    cbar_scatt.set_label(r"Energy transfer $\hbar\omega=E_{i}-E_{f}$ (meV)")  # normalised to 1
+    cbar_scatt.set_label(r"$\hbar\omega=E_{i}-E_{f}$ (meV)")  # normalised to 1
     ax.set_xlabel(r"$Q_x=k_{i,x}-k_{f,x}$ ($\AA^{-1}$)")
     ax.set_ylabel(r"$Q_y=k_{i,y}-k_{f,y}$ ($\AA^{-1}$)")
     ax.tick_params(axis="x", direction="in")
     ax.tick_params(axis="y", direction="in")
-    ax.set_title(r"Sample Rotation stepsize {:.0f}°, {:d} times".format(np.rad2deg(ROTATION_STEP), ROTATION_NUMBER))
-    plt.axis("equal")
+    ax.set_title(r"Sample Rotation {:.0f}° x {:d}".format(np.rad2deg(ROTATION_STEP), ROTATION_NUMBER))
     fig.tight_layout()
-    filename = "Mushroom_QxQyhw_Rot{:d}_2d.pdf".format(ROTATION_NUMBER)
-    fig.savefig(filename)
+    # plt.show()
+    filename = "{:s}_Rot{:d}_{:s}.{:s}".format(term, ROTATION_NUMBER, dim, extension)
+    fig.savefig(filename, bbox_inches='tight')
     print("Plot saved: {:s}".format(filename))
     plt.close(fig)
 
 
-# magnon_dispersion_Qihw(geometryctx, axis=AXIS_X)
-# magnon_dispersion_Qihw(geometryctx, axis=AXIS_Y)
-# magnon_dispersion(geometryctx, axis=AXIS_Z)
-# magnon_dispersion_Qijhw(geometryctx)
-only_magnon(geometryctx)
-# only_mushroom(geometryctx)
+for ROTATION_NUMBER in ROTATION_NUMBERS:
+    for dim in DIMENSIONS:
+        for term in CALC_TERMS:
+            dispersion_calc_plot(geometryctx, term=term, dim=dim, extension=EXTENSION_PNG)

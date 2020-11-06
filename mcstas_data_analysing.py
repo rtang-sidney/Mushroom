@@ -6,6 +6,15 @@ from helper import InstrumentContext, MASS_NEUTRON, PLANCKS_CONSTANT, \
     CONVERSION_JOULE_PER_EV, dispersion_signal
 import sys
 
+np.set_printoptions(threshold=sys.maxsize, precision=2)
+
+FILE_PSD_CYL = "psd_cyl.dat"
+FILE_PSD_FLAT = "psd_flat.dat"
+FILE_PSD_VERTICAL = "psd_vertical.dat"
+FILE_L_FLAT = "l_flat.dat"
+FILE_L_VERTICAL = "l_vertical.dat"
+
+FOLDER_DATE = "190820_VNight"
 PSDCYL_COMPONENT = "psdcyl_monitor_out"
 PSD_COMPONENT = "psd_monitor"
 PSDVERT_COMPONENT = "psd_monitor_vertical"
@@ -42,6 +51,8 @@ PATTERN_XYLIMITS = re.compile(
 PATTERN_POSITION = re.compile(r"\s*([-+]?[0-9]*\.?[0-9]*)\s([-+]?[0-9]*\.?[0-9]*)\s([-+]?[0-9]*\.?[0-9]*)")
 PATTERN_PARAM = re.compile(r"\s*(\S*_?\S*)=([-+]?[0-9]*\.?[0-9]*)")
 PATTERN_LABEL = re.compile(r"\s*(\S*\s*\S*)\s*\[(\S*)\]")
+
+SCAN_FOLDER_PREFIX = "Angle"
 
 
 class PsdInformation:
@@ -89,19 +100,9 @@ class PsdInformation:
         intensities = np.loadtxt(fname=filename, comments=COMMENT_SYMBOL, max_rows=self.ysize)
         self.x_1d, self.y_1d, self.intensities = self._psd_signal_adjust(x_1d, y_1d, intensities, geo_ctx=geometryctx)
 
-        # self.azimuthal_angles2d = np.empty_like(self.intensities)
-        # self.wavenumbers2d = np.empty_like(self.intensities)
-        # self.wavevector_transfer_x, self.wavevector_transfer_y, self.wavevector_transfer_z, self.energy_transfer \
-        # , self.intensities = self._position2dispersion(intensities, geo_ctx=geometryctx, instrument=instrumentctx)
-        # self.wavevector_transfer, self.energy_transfer, self.intensities = self.position2dispersion(intensities,
-        #                                                                                             geo_ctx=geometryctx,
-        #                                                                                             instrument=instrumentctx)
-
-        # self._position2dispersion(geo_ctx=geometryctx, instrument=instrumentctx)
-
     def angle_to_folder(self, angle):
         print(angle)
-        scanname = "".join([SCAN_FOLDER_PREFIX, str(int(angle))])
+        scanname = "".join([SCAN_FOLDER_PREFIX, str(int(round(angle)))])
         folder = "/".join([FOLDER_DATE, scanname])
         return folder
 
@@ -124,36 +125,24 @@ class PsdInformation:
     def _get_psdcyl_middle(self):
         return float(re.search(pattern=PATTERN_POSITION, string=self.metadata_dict[KEY_POSITION]).group(2))
 
-    def _psd_signal_adjust(self, x_1d, y_1d, intensity_2d, geo_ctx: GeometryContext):
+    def _psd_signal_adjust(self, x, y, intensity, geo_ctx: GeometryContext):
         component = self.metadata_dict[KEY_COMPONENT]
         if component == PSDCYL_COMPONENT:
-            x_1d = np.deg2rad(x_1d)
-            y_1d = self._get_psdcyl_middle() + y_1d
+            x = np.deg2rad(x)
+            y = self._get_psdcyl_middle() + y
+            x, y = np.meshgrid(x, y)
         elif component == PSD_COMPONENT:
-            # x and y axes are exchanged in McStas
-            # x_1d, y_1d = y_1d * 1e-2, x_1d * 1e-2
-            # intensity_2d = np.transpose(intensity_2d)
-            x_2d, y_2d = np.meshgrid(x_1d, y_1d)
-            intensity_2d = np.where(np.linalg.norm([x_2d, y_2d], axis=0) > 0.4, intensity_2d, 0)
+            x, y = np.meshgrid(x, y)
+            intensity = np.where(np.linalg.norm([x, y], axis=0) > 0.4, intensity, 0)
         elif component == PSDVERT_COMPONENT:
-            x_1d = np.arctan2(x_1d, abs(geo_ctx.detector_line_vert[-1])) + np.deg2rad(self.scan_angle)
-            scanx_1d = np.deg2rad(np.linspace(-180, 180, num=361))
-            y_1d = self._get_psdcyl_middle() + y_1d
-            # intensity_1d = np.mean(intensity_2d, axis=1)
-            azi_index = np.searchsorted(scanx_1d, x_1d)
-            # print(azi_index)
-            intensitynew_2d = np.zeros((y_1d.shape[0], scanx_1d.shape[0]))
-            # print(type(x_1d), "\n", type(y_1d))
-            # print(np.meshgrid(x_1d, y_1d))
-            # print(x_1d.shape, y_1d.shape, intensity_2d.shape)
-            index_2d = np.meshgrid(azi_index, np.arange(intensitynew_2d.shape[0]))
-            # print(intensitynew_2d.shape)
-            np.add.at(intensitynew_2d, (index_2d[1], index_2d[0]), intensity_2d)
-            x_1d = scanx_1d
-            intensity_2d = intensitynew_2d
+            x = np.arctan2(x, abs(geo_ctx.detector_line_vert[-1])) + np.deg2rad(self.scan_angle)
+            y = self._get_psdcyl_middle() + y
+            x, y = np.meshgrid(x, y)
         else:
             raise RuntimeError("Cannot match the x variable {}.".format(self.metadata_dict[KEY_XVAR]))
-        return x_1d, y_1d, intensity_2d
+        x, y = x.flatten(), y.flatten()
+        intensity = intensity.flatten()
+        return x, y, intensity
 
 
 def folder_name(instrument, day, month, year, hms):
@@ -273,20 +262,12 @@ def plot_ax_2d(fig, ax, x_2d, y_2d, z_2d, psd_comp, subplot_index=None):
     ax.grid()
 
 
-np.set_printoptions(threshold=sys.maxsize, precision=2)
+geometryctx = GeometryContext()
 
-FILE_PSD_CYL = "psd_cyl.dat"
-FILE_PSD_FLAT = "psd_flat.dat"
-FILE_PSD_VERTICAL = "psd_vertical.dat"
-FILE_L_FLAT = "l_flat.dat"
-FILE_L_VERTICAL = "l_vertical.dat"
+ki = geometryctx.wavenumber_in * 1e-10
 
-FOLDER_DATE = "190820_VNight"
-ki = 1.2 * 1e10
-
-SCAN_FOLDER_PREFIX = "Angle"
 scan_angles = np.linspace(start=5, stop=170, num=166)
-# scan_angles = np.linspace(start=5, stop=158, num=154)
+# Angles in the McStas scans, not necessarily the same as the azimuthal angles of the analyser
 
 angle = scan_angles[0]
 # psd_cyl = PsdInformation(angle, FILE_PSD_CYL)
@@ -305,29 +286,25 @@ for angle in scan_angles[1:]:
                                                               intensities_vertical=intensities_vertical)
     intensities_flat, intensities_vertical = intensity_update(angle=-angle, intensities_flat=intensities_flat,
                                                               intensities_vertical=intensities_vertical)
-# print("ki={}".format(ki * 1e-10))
-# azi_cyl_2d, y_cyl_2d = np.meshgrid(azi_angles_cyl, y_positions_cyl)
-# fig, ax = plt.subplots()
-# plot_ax_2d(fig=fig, ax=ax, x_2d=np.rad2deg(azi_cyl_2d), y_2d=y_cyl_2d, z_2d=intensities_cyl, psd_comp=PSDCYL_COMPONENT)
-# plt.title("Total intensities on cyl. PSDs, ki={:5.3f}".format(ki * 1e-10))
-# plt.tight_layout()
-# plt.savefig("_".join([FOLDER_DATE, "Data_collection_cyl.pdf"]))
-# plt.close(fig)
 
-azi_vert_2d, y_vert_2d = np.meshgrid(x_pos_vertical, y_pos_vertical)
-fig, ax = plt.subplots()
-plot_ax_2d(fig=fig, ax=ax, x_2d=np.rad2deg(azi_vert_2d), y_2d=y_vert_2d, z_2d=intensities_vertical,
-           psd_comp=PSDVERT_COMPONENT)
-plt.title("Total intensities on vert. PSDs, ki={:5.3f}".format(ki * 1e-10))
-plt.tight_layout()
-plt.savefig("_".join([FOLDER_DATE, "Data_collection_vert.pdf"]))
-plt.close(fig)
 
-x_flat_2d, y_flat_2d = np.meshgrid(x_pos_flat, y_pos_flat)
-azi_flat_2d = np.rad2deg(np.arctan2(y_flat_2d, x_flat_2d))
-radi_flat_2d = np.linalg.norm([x_flat_2d, y_flat_2d], axis=0)
-xplot = [x_flat_2d, azi_flat_2d]
-yplot = [y_flat_2d, radi_flat_2d]
+def psd_calc_plot(geo_ctx: GeometryContext, psd_type):
+    fig, ax = plt.subplots()
+    if psd_type == PSDVERT_COMPONENT:
+        plot_ax_2d(fig=fig, ax=ax, x_2d=np.rad2deg(x_pos_vertical), y_2d=y_pos_vertical, z_2d=intensities_vertical,
+                   psd_comp=PSDVERT_COMPONENT)
+        plt.title("Total intensities on vert. PSDs, ki={:5.3f}".format(ki * 1e-10))
+
+    plt.tight_layout()
+    plt.savefig("_".join([FOLDER_DATE, "Data_collection_{:s}.pdf".format(psd_type)]), bbox_inches='tight')
+    plt.close(fig)
+
+
+
+azi_flat_2d = np.rad2deg(np.arctan2(y_pos_flat, x_pos_flat))
+radi_flat_2d = np.linalg.norm([x_pos_flat, y_pos_flat], axis=0)
+xplot = [x_pos_flat, azi_flat_2d]
+yplot = [y_pos_flat, radi_flat_2d]
 fig, axs = plt.subplots(2, 1)
 for i in range(axs.ravel().shape[0]):
     plot_ax_2d(fig=fig, ax=axs[i], x_2d=xplot[i], y_2d=yplot[i], z_2d=intensities_flat, psd_comp=PSD_COMPONENT,
@@ -336,8 +313,6 @@ plt.suptitle("Total intensities on flat PSDs, ki={:5.3f}".format(ki * 1e-10))
 plt.tight_layout(rect=[0, 0, 1, 0.95])
 plt.savefig("_".join([FOLDER_DATE, "Data_collection_flat.pdf"]))
 plt.close(fig)
-
-geometryctx = GeometryContext()
 
 kf_vert, qx_vert, qy_vert, qz_vert, e_transfer_vert = np.array(list(map(
     lambda i: position2dispersion(x=x_pos_vertical[i], y=y_pos_vertical[i], psd_comp=PSDVERT_COMPONENT,

@@ -23,7 +23,7 @@ TERM_SCATTERING = "scattering"  # energy conservation at the scattering
 TERM_CROSSSECTION = "crosssection"  # Delta function is approximated by Gaussian function with intensity distribution
 TERM_MUSHROOM = "Mushroom"
 TERM_MAGNONMUSHROOM = "MagnonMushroom"
-CALC_TERMS = [TERM_MAGNON, TERM_MAGNONMUSHROOM]  # TERM_MUSHROOM,
+CALC_TERMS = [TERM_MAGNONMUSHROOM]  # TERM_MAGNON, TERM_MUSHROOM,
 
 AXIS_X = "x"
 AXIS_Y = "y"
@@ -36,9 +36,10 @@ ROTATION_NUMBERS = [0, 10, 30, 90]  # number of steps
 
 PLOT_NUMBER = 300
 
+DIM_1 = "1d"
 DIM_2 = "2d"
 DIM_3 = "3d"
-DIMENSIONS = [DIM_2, DIM_3]
+DIMENSIONS = [DIM_1]  # DIM_2, DIM_3
 
 EXTENSION_PDF = "pdf"
 EXTENSION_PNG = "png"
@@ -77,8 +78,6 @@ def uncert_kf(geo_ctx: GeometryContext, instrument: InstrumentContext, an_ind_no
     uncertainty_kf_bragg = kf_now * np.linalg.norm(
         [instrument.deltad_d, angular_uncertainty_analyser / np.tan(twotheta_an / 2.0)])  # from Bragg's law
     uncertainty_kf_segment = abs(kf_now - kf_near)
-    # print(angular_uncertainty_analyser, np.rad2deg(twotheta_an), uncertainty_kf_bragg * 1e-10,
-    #       uncertainty_kf_segment * 1e-10)
     return max(uncertainty_kf_bragg, uncertainty_kf_segment)
 
 
@@ -100,9 +99,6 @@ def uncert_azi(geo_ctx: GeometryContext, instrument: InstrumentContext, an_index
 
 
 def de_of_e_from_an(geo_ctx: GeometryContext, instrument: InstrumentContext, an_ind_now, an_ind_near):
-    # factor_polar= spread_factor_detector(geo_ctx=geo_ctx, instrument=instrument,
-    #                                                       analyser_now=analyser_point,
-    #                                                       analyser_nearest=nearest_point, index_now=index)[0]
     kf_now = geo_ctx.wavenumbers_out[an_ind_now]
     delta_kf = uncert_kf(geo_ctx, instrument, an_ind_now=an_ind_now, an_ind_near=an_ind_near) * spread_factor_detector(
         geo_ctx=geo_ctx, instrument=instrument, index_now=an_ind_now, index_nearest=an_ind_near)[0]
@@ -457,9 +453,9 @@ instrumentctx = InstrumentContext()
 #                            range(geometryctx.azi_angles.shape[0]))))*1e-10
 
 
-def magnon_scattered(scattering_de, magnon_de):
-    if abs((scattering_de - magnon_de) / magnon_de) < E_RESOL or abs(
-            (scattering_de + magnon_de) / magnon_de) < E_RESOL:
+def magnon_scattered(scattering_de, magnon_de, de_of_e):
+    if abs((scattering_de - magnon_de) / magnon_de) < de_of_e or abs(
+            (scattering_de + magnon_de) / magnon_de) < de_of_e:
         return scattering_de
     else:
         return np.nan
@@ -560,47 +556,62 @@ def mushroom_magnon_crosssection(geo_ctx: GeometryContext):
                              range(geo_ctx.pol_angles.shape[0]))))
 
 
-def dispersion_calc_plot(geo_ctx: GeometryContext, term, dim, extension):
+def dispersion_calc_plot(geo_ctx: GeometryContext, instrument: InstrumentContext, term, dim, extension):
     data_qx, data_qy, data_qz = mushroom_wavevector_transfer(geo_ctx=geo_ctx)
     data_qx = data_qx.flatten()
     data_qy = data_qy.flatten()
     data_qz = data_qz.flatten()
 
-    def energy_transfer(geo_ctx: GeometryContext, term, data_qx, data_qy, data_qz):
+    def energy_transfer(geo_ctx: GeometryContext, instrument: InstrumentContext, term, data_qx, data_qy, data_qz):
         if term == TERM_MAGNON:
-            magnon_de = np.array(list(map(lambda i: magnon_energy(
+            magnon_hw = np.array(list(map(lambda i: magnon_energy(
                 wavevector_transfer=np.array([data_qx[i], data_qy[i], data_qz[i]])), range(data_qx.shape[0]))))
-            return magnon_de
+            return magnon_hw
         elif term == TERM_MUSHROOM:
-            data_de = mushroom_energy_transfer(geo_ctx=geo_ctx).flatten()
-            return data_de
+            data_hw = mushroom_energy_transfer(geo_ctx=geo_ctx).flatten()
+            return data_hw
         elif term == TERM_MAGNONMUSHROOM:
-            data_de = mushroom_energy_transfer(geo_ctx=geo_ctx).flatten()
-            magnon_de = np.array(list(map(lambda i: magnon_energy(
+            magnon_hw = np.array(list(map(lambda i: magnon_energy(
                 wavevector_transfer=np.array([data_qx[i], data_qy[i], data_qz[i]])), range(data_qx.shape[0]))))
-            scattered_de = np.array(list(
-                map(lambda i: magnon_scattered(scattering_de=data_de[i], magnon_de=magnon_de[i]),
-                    range(data_qx.shape[0]))))
-            return scattered_de
+            data_hw = mushroom_energy_transfer(geo_ctx=geo_ctx)
+            rela_uncer_hw = np.array(list(map(lambda i: np.array(list(map(
+                lambda j: de_of_e_from_an(geo_ctx=geo_ctx, instrument=instrument, an_ind_now=i,
+                                          an_ind_near=1 if i == 0 else i - 1), range(data_hw.shape[1])))),
+                                              range(data_hw.shape[0]))))
+            data_hw, rela_uncer_hw = data_hw.flatten(), rela_uncer_hw.flatten()
+            scatter_hw = np.array(list(map(
+                lambda i: magnon_scattered(scattering_de=data_hw[i], magnon_de=magnon_hw[i], de_of_e=rela_uncer_hw[i]),
+                range(data_qx.shape[0]))))
+            return scatter_hw
         else:
             raise ValueError("Invalid term to define the dispersion.")
 
-    de = energy_transfer(geo_ctx=geo_ctx, term=term, data_qx=data_qx, data_qy=data_qy, data_qz=data_qz)
+    de = energy_transfer(geo_ctx=geo_ctx, instrument=instrument, term=term, data_qx=data_qx, data_qy=data_qy,
+                         data_qz=data_qz)
     qx_now, qy_now = data_qx, data_qy
     if ROTATION_NUMBER > 0:
         for r in range(1, ROTATION_NUMBER + 1):
             qx_now, qy_now = rotation_around_z(rot_angle=ROTATION_STEP, old_x=qx_now, old_y=qy_now)
-            de_now = energy_transfer(geo_ctx=geo_ctx, term=term, data_qx=qx_now, data_qy=qy_now, data_qz=data_qz)
+            de_now = energy_transfer(geo_ctx=geo_ctx, instrument=instrument, term=term, data_qx=qx_now, data_qy=qy_now,
+                                     data_qz=data_qz)
 
             data_qx = np.append(data_qx, qx_now)
             data_qy = np.append(data_qy, qy_now)
             de = np.append(de, de_now)
+        if dim == DIM_1:
+            qz_now = data_qz
+            for r in range(1, ROTATION_NUMBER + 1):
+                data_qz = np.append(data_qz, qz_now)
 
-    if dim == DIM_2:
+    if dim == DIM_1:
+        fig, ax = plt.subplots()
+        cnt_crosssection = ax.scatter(np.linalg.norm([data_qx, data_qy, data_qz], axis=0) * 1e-10,
+                                      de * 1e3 / CONVERSION_JOULE_PER_EV, c=de * 1e3 / CONVERSION_JOULE_PER_EV,
+                                      marker=".")
+
+    elif dim == DIM_2:
         fig, ax = plt.subplots()
         plt.axis("equal")
-        cnt_crosssection = ax.scatter(data_qx * 1e-10, data_qy * 1e-10, c=de * 1e3 / CONVERSION_JOULE_PER_EV,
-                                      marker=".")
         # if term in [TERM_MAGNON, TERM_MAGNONMUSHROOM]:
         #     ax.text(2, 2, r"$D={:.1f}$ meV$\cdot\AA^2$".format(
         #         stiffness_constant(latt_const=10 * 1e-10) * 1e3 * 1e20 / CONVERSION_JOULE_PER_EV))
@@ -618,12 +629,11 @@ def dispersion_calc_plot(geo_ctx: GeometryContext, term, dim, extension):
     ax.set_ylabel(r"$Q_y=k_{i,y}-k_{f,y}$ ($\AA^{-1}$)")
     ax.tick_params(axis="x", direction="in")
     ax.tick_params(axis="y", direction="in")
-    if ROTATION_NUMBER == 0:  #
+    if ROTATION_NUMBER == 0:
         ax.set_title("No sample rotation")
     else:
         ax.set_title(r"Sample Rotation {:.0f}° x {:d}".format(np.rad2deg(ROTATION_STEP), ROTATION_NUMBER))
     fig.tight_layout()
-    # plt.show()
     filename = "{:s}_Rot{:d}_{:s}.{:s}".format(term, ROTATION_NUMBER, dim, extension)
     fig.savefig(filename, bbox_inches='tight')
     print("Plot saved: {:s}".format(filename))
@@ -633,4 +643,4 @@ def dispersion_calc_plot(geo_ctx: GeometryContext, term, dim, extension):
 for ROTATION_NUMBER in ROTATION_NUMBERS:
     for dim in DIMENSIONS:
         for term in CALC_TERMS:
-            dispersion_calc_plot(geometryctx, term=term, dim=dim, extension=EXTENSION_PNG)
+            dispersion_calc_plot(geometryctx, instrumentctx, term=term, dim=dim, extension=EXTENSION_PNG)

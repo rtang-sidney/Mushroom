@@ -23,7 +23,7 @@ TERM_SCATTERING = "scattering"  # energy conservation at the scattering
 TERM_CROSSSECTION = "crosssection"  # Delta function is approximated by Gaussian function with intensity distribution
 TERM_MUSHROOM = "Mushroom"
 TERM_MAGNONMUSHROOM = "MagnonMushroom"
-CALC_TERMS = [TERM_MAGNONMUSHROOM]  # TERM_MAGNON, TERM_MUSHROOM,
+CALC_TERMS = [TERM_MAGNON, TERM_MUSHROOM, TERM_MAGNONMUSHROOM]  # TERM_MAGNON, TERM_MUSHROOM, TERM_MAGNONMUSHROOM
 
 AXIS_X = "x"
 AXIS_Y = "y"
@@ -31,15 +31,13 @@ AXIS_Z = "z"
 AXES = [AXIS_X, AXIS_Y, AXIS_Z]
 
 ROTATION_STEP = np.deg2rad(1)  # sample rotation step size
-ROTATION_NUMBERS = [0, 10, 30, 90]  # number of steps
+ROTATION_NUMBERS = [0, 10, 30, 90]  # number of steps, 0, 10, 30, 90
 # ROTATION_NUMBER = 10  # number of steps
-
-PLOT_NUMBER = 300
 
 DIM_1 = "1d"
 DIM_2 = "2d"
 DIM_3 = "3d"
-DIMENSIONS = [DIM_1]  # DIM_2, DIM_3
+DIMENSIONS = [DIM_1, DIM_2, DIM_3]  # DIM_1, DIM_2, DIM_3
 
 EXTENSION_PDF = "pdf"
 EXTENSION_PNG = "png"
@@ -484,14 +482,6 @@ def plot_range_qxqy(qx, qy, rot_step, rot_number):
     return plot_qx, plot_qy
 
 
-def plot_etransfer(de_2d, energy_transfer):
-    if isinstance(energy_transfer, float):
-        de_2d = np.where(abs(np.where(de_2d, de_2d, 0) - energy_transfer) < 2e-2, de_2d, None)
-    else:
-        raise RuntimeError("Invalid energy transfer given")
-    return de_2d
-
-
 def mushroom_wavevector_transfer(geo_ctx: GeometryContext):
     mushroom_qx = np.array(list(map(lambda i: np.array(list(
         map(lambda j: geo_ctx.wavevector_transfer(index_pol=i, index_azi=j)[0], range(geo_ctx.azi_angles.shape[0])))),
@@ -509,38 +499,6 @@ def mushroom_energy_transfer(geo_ctx: GeometryContext):
     return np.array(list(map(lambda i: np.array(list(map(
         lambda j: PLANCKS_CONSTANT ** 2 * (geo_ctx.wavenumber_in ** 2 - geo_ctx.wavenumbers_out[i] ** 2) / (
                 2 * MASS_NEUTRON), range(geo_ctx.azi_angles.shape[0])))), range(geo_ctx.pol_angles.shape[0]))))
-
-
-def rotation_axis_range(qx, qy, rot_step, rot_number, axis=None):
-    range_min, range_max = None, None
-    if axis:
-        for i in range(1, rot_number + 1):
-            qx, qy = rotation_around_z(rot_angle=rot_step, old_x=qx, old_y=qy)
-            if axis == AXIS_X:
-                data = qx
-            elif axis == AXIS_Y:
-                data = qy
-            else:
-                raise RuntimeError("Wrong axis given.")
-            if i == 0:
-                range_min, range_max = np.min(data), np.max(data)
-            else:
-                range_min = min(range_min, np.min(data))
-                range_max = max(range_max, np.max(data))
-        plot_range = np.linspace(range_min, range_max, num=PLOT_NUMBER)
-        return plot_range
-    else:
-        qx_min, qx_max = np.min(qx), np.max(qx)
-        qy_min, qy_max = np.min(qy), np.max(qy)
-        for i in range(1, rot_number + 1):
-            qx, qy = rotation_around_z(rot_angle=rot_step, old_x=qx, old_y=qy)
-            qx_min = min(qx_min, np.min(qx))
-            qy_min = min(qy_min, np.min(qy))
-            qx_max = max(qx_max, np.max(qx))
-            qy_max = max(qy_max, np.max(qy))
-        plot_qx = np.linspace(qx_min, qx_max, num=PLOT_NUMBER)
-        plot_qy = np.linspace(qy_min, qy_max, num=PLOT_NUMBER)
-        return plot_qx, plot_qy
 
 
 def mushroom_magnon_crosssection(geo_ctx: GeometryContext):
@@ -603,37 +561,39 @@ def dispersion_calc_plot(geo_ctx: GeometryContext, instrument: InstrumentContext
             for r in range(1, ROTATION_NUMBER + 1):
                 data_qz = np.append(data_qz, qz_now)
 
+    # TODO: define the unit changer for Q-vectors and energies
     if dim == DIM_1:
         fig, ax = plt.subplots()
         cnt_crosssection = ax.scatter(np.linalg.norm([data_qx, data_qy, data_qz], axis=0) * 1e-10,
                                       de * 1e3 / CONVERSION_JOULE_PER_EV, c=de * 1e3 / CONVERSION_JOULE_PER_EV,
                                       marker=".")
-
-    elif dim == DIM_2:
-        fig, ax = plt.subplots()
-        plt.axis("equal")
-        # if term in [TERM_MAGNON, TERM_MAGNONMUSHROOM]:
-        #     ax.text(2, 2, r"$D={:.1f}$ meV$\cdot\AA^2$".format(
-        #         stiffness_constant(latt_const=10 * 1e-10) * 1e3 * 1e20 / CONVERSION_JOULE_PER_EV))
-    elif dim == DIM_3:
-        fig = plt.figure()
-        ax = fig.add_subplot(111, projection='3d')
-        cnt_crosssection = ax.scatter(data_qx * 1e-10, data_qy * 1e-10, de * 1e3 / CONVERSION_JOULE_PER_EV,
-                                      c=de * 1e3 / CONVERSION_JOULE_PER_EV, marker=".")
-        ax.tick_params(axis="z", direction="in")
+        ax.set_xlabel(r"$|\vec{Q}|=|\vec{k}_{i}-\vec{k}_{f}|$ ($\AA^{-1}$)")
+        ax.set_ylabel(r"$\hbar\omega=E_{i}-E_{f}$ (meV)")
     else:
-        raise ValueError("The given dimension is invalid for plotting.")
-    cbar_scatt = fig.colorbar(cnt_crosssection, ax=ax)
-    cbar_scatt.set_label(r"$\hbar\omega=E_{i}-E_{f}$ (meV)")  # normalised to 1
-    ax.set_xlabel(r"$Q_x=k_{i,x}-k_{f,x}$ ($\AA^{-1}$)")
-    ax.set_ylabel(r"$Q_y=k_{i,y}-k_{f,y}$ ($\AA^{-1}$)")
+        if dim == DIM_2:
+            fig, ax = plt.subplots()
+            plt.axis("equal")
+            cnt_crosssection = ax.scatter(data_qx * 1e-10, data_qy * 1e-10, c=de * 1e3 / CONVERSION_JOULE_PER_EV,
+                                          marker=".")
+        elif dim == DIM_3:
+            fig = plt.figure()
+            ax = fig.add_subplot(111, projection='3d')
+            cnt_crosssection = ax.scatter(data_qx * 1e-10, data_qy * 1e-10, de * 1e3 / CONVERSION_JOULE_PER_EV,
+                                          c=de * 1e3 / CONVERSION_JOULE_PER_EV, marker=".")
+            ax.tick_params(axis="z", direction="in")
+        else:
+            raise ValueError("The given dimension is invalid for plotting.")
+        cbar_scatt = fig.colorbar(cnt_crosssection, ax=ax)
+        cbar_scatt.set_label(r"$\hbar\omega=E_{i}-E_{f}$ (meV)")  # normalised to 1
+        ax.set_xlabel(r"$Q_x=k_{i,x}-k_{f,x}$ ($\AA^{-1}$)")
+        ax.set_ylabel(r"$Q_y=k_{i,y}-k_{f,y}$ ($\AA^{-1}$)")
     ax.tick_params(axis="x", direction="in")
     ax.tick_params(axis="y", direction="in")
     if ROTATION_NUMBER == 0:
         ax.set_title("No sample rotation")
     else:
         ax.set_title(r"Sample Rotation {:.0f}° x {:d}".format(np.rad2deg(ROTATION_STEP), ROTATION_NUMBER))
-    fig.tight_layout()
+    # fig.tight_layout()
     filename = "{:s}_Rot{:d}_{:s}.{:s}".format(term, ROTATION_NUMBER, dim, extension)
     fig.savefig(filename, bbox_inches='tight')
     print("Plot saved: {:s}".format(filename))
@@ -644,3 +604,4 @@ for ROTATION_NUMBER in ROTATION_NUMBERS:
     for dim in DIMENSIONS:
         for term in CALC_TERMS:
             dispersion_calc_plot(geometryctx, instrumentctx, term=term, dim=dim, extension=EXTENSION_PNG)
+# print(stiffness_constant() * 1e3 / CONVERSION_JOULE_PER_EV * 1e20)

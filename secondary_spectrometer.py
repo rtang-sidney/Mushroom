@@ -44,6 +44,7 @@ EXTENSION_PNG = "png"
 
 # def get_analyser_angular_spread(geo_ctx: GeometryContext, sample, analyser_point, focus_point):
 
+# TODO: calculate iron magnon and the Mushroom results
 
 def monochromator_angular_spread(divergence_in, divergence_out, mosaic):
     # For the formula see [Paper1]
@@ -550,6 +551,7 @@ def dispersion_calc_plot(geo_ctx: GeometryContext, instrument: InstrumentContext
     de = energy_transfer(geo_ctx=geo_ctx, instrument=instrument, term=term, data_qx=data_qx, data_qy=data_qy,
                          data_qz=data_qz)
     qx_now, qy_now = data_qx, data_qy
+    # TODO: possible to calculate the hw after the whole rotation process is finished?
     if ROTATION_NUMBER > 0:
         for r in range(1, ROTATION_NUMBER + 1):
             qx_now, qy_now = rotation_around_z(rot_angle=ROTATION_STEP, old_x=qx_now, old_y=qy_now)
@@ -564,7 +566,7 @@ def dispersion_calc_plot(geo_ctx: GeometryContext, instrument: InstrumentContext
             for r in range(1, ROTATION_NUMBER + 1):
                 data_qz = np.append(data_qz, qz_now)
 
-    # TODO: define the unit changer for Q-vectors and energies
+    # TODO: define the unit transformer for Q-vectors and energies
     if dim == DIM_1:
         fig, ax = plt.subplots()
         cnt_crosssection = ax.scatter(np.linalg.norm([data_qx, data_qy, data_qz], axis=0) * 1e-10,

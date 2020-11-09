@@ -12,12 +12,15 @@ np.set_printoptions(threshold=sys.maxsize, precision=2)
 
 class MagnonModel:
     def __init__(self, latt_const=4.5 * 1e-10, spin_coupling=0.3 * 1e-3 * CONVERSION_JOULE_PER_EV, spin=1,
-                 temperature=300):
+                 temperature=300, stiff_const=None):
         self.l_const = latt_const
         self.spin_coup = spin_coupling
         self.spin = spin
         self.temp = temperature
-        self.stiff_const = 2 * self.spin_coup * self.spin * self.l_const ** 2
+        if stiff_const:
+            self.stiff_const = stiff_const
+        else:
+            self.stiff_const = 2 * self.spin_coup * self.spin * self.l_const ** 2
 
     def if_scattered(self, ki_vector, kf_vector):
         """
@@ -83,9 +86,8 @@ class MagnonModel:
                 pass
         else:  # no restriction from the Mushroom wave vectors
             kf = np.sqrt(ki ** 2 - 2 * MASS_NEUTRON * hw / PLANCKS_CONSTANT ** 2)
-            pol_angle = np.arccos(
-                np.linalg.norm(
-                    [qq_x - ki, qq_y]) / kf)  # it is from -pi/6 to +pi/6, where the cosine function is well-defined
+            pol_angle = np.arccos(np.linalg.norm([qq_x - ki, qq_y]) / kf)
+            # it is from -pi/6 to +pi/6, where the cosine function is well-defined
             qq_z = -kf * np.sin(pol_angle)
 
         # it gives a symmetric pattern iff the ki lays on one reciprocal lattice point
@@ -107,7 +109,7 @@ class MagnonModel:
         debye_waller = 1
         neutrons_lose_energy = dirac_delta_approx(hw, magnon_hw, resol) * (n_q + 1)
         neutrons_gain_energy = dirac_delta_approx(hw, -magnon_hw, resol) * n_q
-        return (neutrons_lose_energy + neutrons_gain_energy)  # prefactor * debye_waller *
+        return neutrons_lose_energy + neutrons_gain_energy  # prefactor * debye_waller *
 
     def scatt_cross_kikf(self, ki_vector, kf_vector, resol=0.01):
         # it gives a symmetric pattern iff the ki lays on one reciprocal lattice point
@@ -123,10 +125,10 @@ class MagnonModel:
         magnon_hw = dd * np.linalg.norm(magnon_q) ** 2
         beta = 1.0 / (BOLTZMANN * self.temp)
         n_q = 1.0 / (np.exp(magnon_hw * beta) - 1)
-        prefactor = (FACTOR_GAMMA * THOMSON_SCATT_LENGTH) ** 2 * kf / ki * (
-                2 * np.pi / self.l_const) ** 3 * self.spin * (
-                            1 + kz ** 2)
-        debye_waller = 1
+        # prefactor = (FACTOR_GAMMA * THOMSON_SCATT_LENGTH) ** 2 * kf / ki * (
+        #         2 * np.pi / self.l_const) ** 3 * self.spin * (
+        #                     1 + kz ** 2)
+        # debye_waller = 1
         energy_loss = dirac_delta_approx(hw, magnon_hw, resol) * (n_q + 1)
         energy_gain = dirac_delta_approx(hw, -magnon_hw, resol) * n_q
-        return (energy_loss + energy_gain)
+        return energy_loss + energy_gain

@@ -28,12 +28,20 @@ def wavelength_to_wavenumber(wavelength):
     return 2.0 * np.pi / wavelength
 
 
+def wavenumber_to_wavelength(wavenumber):
+    return 2.0 * np.pi / wavenumber
+
+
 def wavelength_to_joule(wavelength):
     return 2 * np.pi ** 2 * PLANCKS_CONSTANT ** 2 / (MASS_NEUTRON * wavelength ** 2)
 
 
 def wavelength_to_eV(wavelength):
     return wavelength_to_joule(wavelength) / CONVERSION_JOULE_PER_EV
+
+
+def energy_to_wavevector(energy):
+    return np.sqrt(2 * MASS_NEUTRON * energy) / PLANCKS_CONSTANT
 
 
 def points_distance(point1, point2):

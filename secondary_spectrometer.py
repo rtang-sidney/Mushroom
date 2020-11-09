@@ -1,11 +1,10 @@
 import matplotlib.pyplot as plt
 import numpy as np
 from geometry_context import GeometryContext
+from magnonmodel import MagnonModel
 from helper import wavelength_to_eV, points_distance, vector_bisector, InstrumentContext, points_to_vector, \
     points_to_slope_radian, unit_vector, vector_project_a2b, deg2min, points_bisecting_line, line_to_y, \
-    PLANCKS_CONSTANT, MASS_NEUTRON, CONVERSION_JOULE_PER_EV, data2range, dispersion_signal, rotation_around_z, \
-    wavenumber_vector
-from magnon import magnon_energy, scatt_cross_qxqyde, scatt_cross_kikf, stiffness_constant
+    PLANCKS_CONSTANT, MASS_NEUTRON, CONVERSION_JOULE_PER_EV, rotation_around_z, wavenumber_vector
 from mpl_toolkits.mplot3d import Axes3D
 
 plt.rcParams.update({'font.size': 16})
@@ -18,7 +17,7 @@ plt.rcParams.update({'font.size': 16})
 E_RESOL = 0.02  # energy resolution (relative uncertainty)
 # Comment from Alex <3
 # line: ax + by + c = 0 -> (a, b, c)
-TERM_MAGNON = "Magnon"
+TERM_MAGNON = "MagnonModel"
 TERM_SCATTERING = "scattering"  # energy conservation at the scattering
 TERM_CROSSSECTION = "crosssection"  # Delta function is approximated by Gaussian function with intensity distribution
 TERM_MUSHROOM = "Mushroom"
@@ -417,6 +416,7 @@ def wavenumbers_psd(geo_ctx: GeometryContext):
 
 geometryctx = GeometryContext()
 instrumentctx = InstrumentContext()
+magnonmdl = MagnonModel()
 
 
 # print("The index of the segment in the middle of the polar angle range: {:d}".format(int(geometryctx.pol_middle_index + 1)))
@@ -503,13 +503,16 @@ def mushroom_energy_transfer(geo_ctx: GeometryContext):
 
 def mushroom_magnon_crosssection(geo_ctx: GeometryContext):
     ki_vector = np.array([geo_ctx.wavenumber_in, 0, 0])
-    return np.array(list(map(lambda i: np.array(list(map(lambda j: scatt_cross_kikf(ki_vector=ki_vector,
-                                                                                    kf_vector=wavenumber_vector(
-                                                                                        wavenumber=
-                                                                                        geo_ctx.wavenumbers_out[i],
-                                                                                        azi_angle=geo_ctx.azi_angles[j],
-                                                                                        pol_angle=geo_ctx.pol_angles[
-                                                                                            i])),
+    return np.array(list(map(lambda i: np.array(list(map(lambda j: magnonmdl.scatt_cross_kikf(ki_vector=ki_vector,
+                                                                                              kf_vector=wavenumber_vector(
+                                                                                                  wavenumber=
+                                                                                                  geo_ctx.wavenumbers_out[
+                                                                                                      i],
+                                                                                                  azi_angle=
+                                                                                                  geo_ctx.azi_angles[j],
+                                                                                                  pol_angle=
+                                                                                                  geo_ctx.pol_angles[
+                                                                                                      i])),
                                                          range(geo_ctx.azi_angles.shape[0])))),
                              range(geo_ctx.pol_angles.shape[0]))))
 
@@ -522,14 +525,14 @@ def dispersion_calc_plot(geo_ctx: GeometryContext, instrument: InstrumentContext
 
     def energy_transfer(geo_ctx: GeometryContext, instrument: InstrumentContext, term, data_qx, data_qy, data_qz):
         if term == TERM_MAGNON:
-            magnon_hw = np.array(list(map(lambda i: magnon_energy(
+            magnon_hw = np.array(list(map(lambda i: magnonmdl.magnon_energy(
                 wavevector_transfer=np.array([data_qx[i], data_qy[i], data_qz[i]])), range(data_qx.shape[0]))))
             return magnon_hw
         elif term == TERM_MUSHROOM:
             data_hw = mushroom_energy_transfer(geo_ctx=geo_ctx).flatten()
             return data_hw
         elif term == TERM_MAGNONMUSHROOM:
-            magnon_hw = np.array(list(map(lambda i: magnon_energy(
+            magnon_hw = np.array(list(map(lambda i: magnonmdl.magnon_energy(
                 wavevector_transfer=np.array([data_qx[i], data_qy[i], data_qz[i]])), range(data_qx.shape[0]))))
             data_hw = mushroom_energy_transfer(geo_ctx=geo_ctx)
             rela_uncer_hw = np.array(list(map(lambda i: np.array(list(map(

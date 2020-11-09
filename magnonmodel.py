@@ -1,5 +1,5 @@
-from helper import PLANCKS_CONSTANT, MASS_NEUTRON, CONVERSION_JOULE_PER_EV, dispersion_signal, data2range, \
-    wavenumber_vector, ZERO_TOL, BOLTZMANN, dirac_delta_approx, THOMSON_SCATT_LENGTH, FACTOR_GAMMA
+from helper import PLANCKS_CONSTANT, MASS_NEUTRON, CONVERSION_JOULE_PER_EV, wavenumber_vector, BOLTZMANN, \
+    dirac_delta_approx, THOMSON_SCATT_LENGTH, FACTOR_GAMMA
 import numpy as np
 from geometry_context import GeometryContext
 import sys
@@ -10,7 +10,7 @@ np.set_printoptions(threshold=sys.maxsize, precision=2)
 # this file defines the relevant parameters describing the magnon dispersion by itself
 # TODO: perhaps one should rewrite it as a class so that one still can change all the parameters externally
 
-class Magnon:
+class MagnonModel:
     def __init__(self, latt_const=4.5 * 1e-10, spin_coupling=0.3 * 1e-3 * CONVERSION_JOULE_PER_EV, spin=1,
                  temperature=300):
         self.l_const = latt_const
@@ -34,8 +34,6 @@ class Magnon:
         de = PLANCKS_CONSTANT ** 2 * (np.linalg.norm(ki_vector) ** 2 - np.linalg.norm(kf_vector) ** 2) / (
                 2 * MASS_NEUTRON)
         dd = 2 * self.spin_coup * self.spin * self.l_const ** 2
-        # print(scattering_vector * 1e-10, reci_const * 1e-10, hkl, q_vector * 1e-10, de * 1e3 / CONVERSION_JOULE_PER_EV,
-        #       dd * np.linalg.norm(q_vector) ** 2 * 1e3 / CONVERSION_JOULE_PER_EV)
         if abs(de - dd * np.linalg.norm(q_vector) ** 2) / abs(de) < 5e-2:
             return 1
         else:
@@ -60,13 +58,10 @@ class Magnon:
                                 # TODO: correct this for negative angles
                                 return wavenumber_vector(kf, np.pi - theta, phi)
                         else:
-                            # print("theta", np.rad2deg(theta))
                             return np.empty(3)
                     else:
-                        # print("phi", np.rad2deg(phi))
                         return np.empty(3)
                 else:
-                    # print("kf", kf * 1e-10)
                     return np.empty(3)
             else:
                 return np.empty(3)

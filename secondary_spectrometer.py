@@ -41,6 +41,9 @@ DIMENSIONS = [DIM_1, DIM_2, DIM_3]  # DIM_1, DIM_2, DIM_3
 EXTENSION_PDF = "pdf"
 EXTENSION_PNG = "png"
 
+# Remark = "50cm"
+Remark = "Fe"
+
 
 # def get_analyser_angular_spread(geo_ctx: GeometryContext, sample, analyser_point, focus_point):
 
@@ -304,7 +307,7 @@ def plot_resolution_polarangles(geo_ctx: GeometryContext, polar_angles, all_dqx_
     ax2.tick_params(axis='y', labelcolor=colour_ax2)
 
     secax = ax.secondary_xaxis('top', functions=(forward, inverse))
-    secax.set_xlabel(r' Outgoing wavenumber $k_f$ (angstrom$^{-1}$)')
+    secax.set_xlabel(r'Outgoing wavenumber $k_f$ (angstrom$^{-1}$)')
     secax.tick_params(axis="x", direction="in", labelsize=10)
 
     ax.set_title('Q-resolution of the secondary spectrometer')
@@ -417,10 +420,13 @@ def wavenumbers_psd(geo_ctx: GeometryContext):
 
 geometryctx = GeometryContext()
 instrumentctx = InstrumentContext()
-magnonmdl = MagnonModel()
+# magnonmdl = MagnonModel()
+magnonmdl = MagnonModel(latt_const=2.859e-10,
+                        stiff_const=266 * 1e-3 * CONVERSION_JOULE_PER_EV * 1e-20)  # parameters for bcc-Fe
 
+print("The index of the segment in the middle of the polar angle range: {:d}".format(
+    int(geometryctx.pol_middle_index + 1)))
 
-# print("The index of the segment in the middle of the polar angle range: {:d}".format(int(geometryctx.pol_middle_index + 1)))
 
 # plot_geometry(geo_ctx=geometryctx, instrument=instrumentctx)
 
@@ -518,7 +524,7 @@ def mushroom_magnon_crosssection(geo_ctx: GeometryContext):
                              range(geo_ctx.pol_angles.shape[0]))))
 
 
-def dispersion_calc_plot(geo_ctx: GeometryContext, instrument: InstrumentContext, term, dim, extension):
+def dispersion_calc_plot(geo_ctx: GeometryContext, instrument: InstrumentContext, term, extension):
     data_qx, data_qy, data_qz = mushroom_wavevector_transfer(geo_ctx=geo_ctx)
     data_qx = data_qx.flatten()
     data_qy = data_qy.flatten()
@@ -548,65 +554,58 @@ def dispersion_calc_plot(geo_ctx: GeometryContext, instrument: InstrumentContext
         else:
             raise ValueError("Invalid term to define the dispersion.")
 
-    de = energy_transfer(geo_ctx=geo_ctx, instrument=instrument, term=term, data_qx=data_qx, data_qy=data_qy,
-                         data_qz=data_qz)
     qx_now, qy_now = data_qx, data_qy
-    # TODO: possible to calculate the hw after the whole rotation process is finished?
     if ROTATION_NUMBER > 0:
         for r in range(1, ROTATION_NUMBER + 1):
             qx_now, qy_now = rotation_around_z(rot_angle=ROTATION_STEP, old_x=qx_now, old_y=qy_now)
-            de_now = energy_transfer(geo_ctx=geo_ctx, instrument=instrument, term=term, data_qx=qx_now, data_qy=qy_now,
-                                     data_qz=data_qz)
-
             data_qx = np.append(data_qx, qx_now)
             data_qy = np.append(data_qy, qy_now)
-            de = np.append(de, de_now)
-        if dim == DIM_1:
-            qz_now = data_qz
-            for r in range(1, ROTATION_NUMBER + 1):
-                data_qz = np.append(data_qz, qz_now)
+    de = energy_transfer(geo_ctx=geo_ctx, instrument=instrument, term=term, data_qx=data_qx, data_qy=data_qy,
+                         data_qz=data_qz)
 
     # TODO: define the unit transformer for Q-vectors and energies
-    if dim == DIM_1:
-        fig, ax = plt.subplots()
-        cnt_crosssection = ax.scatter(np.linalg.norm([data_qx, data_qy, data_qz], axis=0) * 1e-10,
-                                      de * 1e3 / CONVERSION_JOULE_PER_EV, c=de * 1e3 / CONVERSION_JOULE_PER_EV,
-                                      marker=".")
-        ax.set_xlabel(r"$|\vec{Q}|=|\vec{k}_{i}-\vec{k}_{f}|$ ($\AA^{-1}$)")
-        ax.set_ylabel(r"$\hbar\omega=E_{i}-E_{f}$ (meV)")
-    else:
-        if dim == DIM_2:
+    for dim in DIMENSIONS:
+        if dim == DIM_1:
+            if ROTATION_NUMBER > 0:
+                qz_now = data_qz
+                for r in range(1, ROTATION_NUMBER + 1):
+                    data_qz = np.append(data_qz, qz_now)
             fig, ax = plt.subplots()
-            plt.axis("equal")
-            cnt_crosssection = ax.scatter(data_qx * 1e-10, data_qy * 1e-10, c=de * 1e3 / CONVERSION_JOULE_PER_EV,
+            cnt_crosssection = ax.scatter(np.linalg.norm([data_qx, data_qy, data_qz], axis=0) * 1e-10,
+                                          de * 1e3 / CONVERSION_JOULE_PER_EV, c=de * 1e3 / CONVERSION_JOULE_PER_EV,
                                           marker=".")
-        elif dim == DIM_3:
-            fig = plt.figure()
-            ax = fig.add_subplot(111, projection='3d')
-            cnt_crosssection = ax.scatter(data_qx * 1e-10, data_qy * 1e-10, de * 1e3 / CONVERSION_JOULE_PER_EV,
-                                          c=de * 1e3 / CONVERSION_JOULE_PER_EV, marker=".")
-            ax.tick_params(axis="z", direction="in")
+            ax.set_xlabel(r"$|\vec{Q}|=|\vec{k}_{i}-\vec{k}_{f}|$ ($\AA^{-1}$)")
+            ax.set_ylabel(r"$\hbar\omega=E_{i}-E_{f}$ (meV)")
         else:
-            raise ValueError("The given dimension is invalid for plotting.")
-        cbar_scatt = fig.colorbar(cnt_crosssection, ax=ax)
-        cbar_scatt.set_label(r"$\hbar\omega=E_{i}-E_{f}$ (meV)")  # normalised to 1
-        ax.set_xlabel(r"$Q_x=k_{i,x}-k_{f,x}$ ($\AA^{-1}$)")
-        ax.set_ylabel(r"$Q_y=k_{i,y}-k_{f,y}$ ($\AA^{-1}$)")
-    ax.tick_params(axis="x", direction="in")
-    ax.tick_params(axis="y", direction="in")
-    if ROTATION_NUMBER == 0:
-        ax.set_title("No sample rotation")
-    else:
-        ax.set_title(r"Sample Rotation {:.0f}° x {:d}".format(np.rad2deg(ROTATION_STEP), ROTATION_NUMBER))
-    # fig.tight_layout()
-    filename = "{:s}_Rot{:d}_{:s}.{:s}".format(term, ROTATION_NUMBER, dim, extension)
-    fig.savefig(filename, bbox_inches='tight')
-    print("Plot saved: {:s}".format(filename))
-    plt.close(fig)
+            if dim == DIM_2:
+                fig, ax = plt.subplots()
+                plt.axis("equal")
+                cnt_crosssection = ax.scatter(data_qx * 1e-10, data_qy * 1e-10, c=de * 1e3 / CONVERSION_JOULE_PER_EV,
+                                              marker=".")
+            elif dim == DIM_3:
+                fig = plt.figure()
+                ax = fig.add_subplot(111, projection='3d')
+                cnt_crosssection = ax.scatter(data_qx * 1e-10, data_qy * 1e-10, de * 1e3 / CONVERSION_JOULE_PER_EV,
+                                              c=de * 1e3 / CONVERSION_JOULE_PER_EV, marker=".")
+                ax.tick_params(axis="z", direction="in")
+            else:
+                raise ValueError("The given dimension is invalid for plotting.")
+            cbar_scatt = fig.colorbar(cnt_crosssection, ax=ax)
+            cbar_scatt.set_label(r"$\hbar\omega=E_{i}-E_{f}$ (meV)")  # normalised to 1
+            ax.set_xlabel(r"$Q_x=k_{i,x}-k_{f,x}$ ($\AA^{-1}$)")
+            ax.set_ylabel(r"$Q_y=k_{i,y}-k_{f,y}$ ($\AA^{-1}$)")
+        ax.tick_params(axis="x", direction="in")
+        ax.tick_params(axis="y", direction="in")
+        if ROTATION_NUMBER == 0:
+            ax.set_title("No sample rotation")
+        else:
+            ax.set_title(r"Sample Rotation {:.0f}° x {:d}".format(np.rad2deg(ROTATION_STEP), ROTATION_NUMBER))
+        filename = "{:s}_Rot{:d}_{:s}_{:s}.{:s}".format(term, ROTATION_NUMBER, dim, Remark, extension)
+        fig.savefig(filename, bbox_inches='tight')
+        print("Plot saved: {:s}".format(filename))
+        plt.close(fig)
 
 
 for ROTATION_NUMBER in ROTATION_NUMBERS:
-    for dim in DIMENSIONS:
-        for term in CALC_TERMS:
-            dispersion_calc_plot(geometryctx, instrumentctx, term=term, dim=dim, extension=EXTENSION_PNG)
-# print(stiffness_constant() * 1e3 / CONVERSION_JOULE_PER_EV * 1e20)
+    for term in CALC_TERMS:
+        dispersion_calc_plot(geometryctx, instrumentctx, term=term, extension=EXTENSION_PNG)

@@ -3,12 +3,16 @@ from helper import points_distance, vector_bisector, ZERO_TOL, points_to_line, p
     unit_vector, InstrumentContext, angle_vectors, wavenumber_vector, rotation_around_z
 
 SOLAR_RANGE = np.deg2rad(60)  # the range of the solar angles covered by the analyser
-CRYO_RADIUS = 0.4  # m, reserving the space for a cryostat
+CRYO_RADIUS = 0.25  # m, reserving the space for a cryostat
 HEIGHT_INSTR = 3.0  # m, from the highest point of the analyser to the horizontal bank of PSD
 
 
 class GeometryContext(object):
-    def __init__(self, angle_plus_deg=30, distance_sf=2.16, polar_focus_deg=-35.17, detector_height=2.49,
+    # def __init__(self, angle_plus_deg=30, distance_sf=2.16, polar_focus_deg=-35.17, detector_height=2.49,
+    #              wavenumber_in=1.5 * 1e10):
+    # this was the parameters used for the cyrostat radius of 0.8 m
+
+    def __init__(self, angle_plus_deg=30, distance_sf=2.03, polar_focus_deg=-33.98, detector_height=2.27,
                  wavenumber_in=1.5 * 1e10):
         self.wavenumber_in = wavenumber_in  # m-1
         self.azi_nega = np.deg2rad(np.linspace(-170, -5, num=166))

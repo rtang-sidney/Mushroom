@@ -21,6 +21,7 @@ angle_focus = np.deg2rad(np.linspace(angle_minus_deg - 1, -90, num=100))
 
 plt.rcParams.update({'font.size': 12})
 
+PLOT_FORMAT = "pdf"
 
 def endpoint_kf(sf, angle):
     point_focus = sf * np.array([np.cos(angle), np.sin(angle)])
@@ -123,7 +124,7 @@ cbar.set_label(r"$k_{f,min}$ ($\AA^{-1}$)")
 # axs[1].plot(1.8, -45, ".", color="black")
 # axs[1].text(1.25, -47, r"$k_{f,min}=$" + "{:.2f}".format(1e-10 * endpoint_kf(1.8, np.deg2rad(-45))) + r"$\AA$")
 plt.tight_layout()
-plt.savefig("kfmax_geometry.png")
+plt.savefig("kfmax_geometry.{:s}".format(PLOT_FORMAT))
 plt.close(fig)
 
 fig, axs = plt.subplots(1, 2, sharey="all")
@@ -144,7 +145,7 @@ cbar.set_label(r"$H_{analyser}-y_{focus}$")
 # axs[1].plot(1.5, -45, ".", color="black")
 # axs[1].text(1.25, -47, r"$k_{f,min}=$" + "{:.2f}".format(1e-10 * endpoint_kf(1.5, np.deg2rad(-45))) + r"$\AA$")
 plt.tight_layout()
-plt.savefig("kf_min_max.png")
+plt.savefig("kf_min_max.{:s}".format(PLOT_FORMAT))
 plt.close(fig)
 
 fig, ax = plt.subplots()
@@ -159,5 +160,5 @@ cbar.set_label("Horizontal size of the detector (m)")
 # axs[1].plot(1.5, -45, ".", color="black")
 # axs[1].text(1.25, -47, r"$k_{f,min}=$" + "{:.2f}".format(1e-10 * endpoint_kf(1.5, np.deg2rad(-45))) + r"$\AA$")
 plt.tight_layout()
-plt.savefig("detector_size.png")
+plt.savefig("detector_size.{:s}".format(PLOT_FORMAT))
 plt.close(fig)

@@ -6,8 +6,8 @@ import geometry_calculation as geo
 from mushroom_context import MushroomContext
 
 ZERO_TOL = 1e-6
-ENERGY_SELECTION_MONOCHROMATOR = "Monochromator"
-ENERGY_SELECTION_VELOCITY_SELECTOR = "VelocitySelector"
+ENERGY_CUT_MONOCHROMATOR = "Monochromator"
+ENERGY_CUT_VELOCITY_SELECTOR = "VelocitySelector"
 FILENAME_PREFIX = "Resolution_Primary_"
 FILENAME_MONOCHROMATOR = "Resolution_Primary_Monochromator.pdf"
 FILENAME_VELOCITY_SELECTOR = "Resolution_Primary_VelocitySelector.pdf"
@@ -33,7 +33,7 @@ def get_resolution_monochromator(ki):
     """
     calculates the resolution of the primary spectrometer with a monochromator
     :param 
-    :param ki: incoming wave number
+    :param ki: incoming wavenumber
     :return: deviations of the components in the sequence of dki (wave number), dtheta (azimuthal angle), dphi (polar
     angle)
     """
@@ -56,26 +56,28 @@ def get_resolution_monochromator(ki):
         denominator = 4 * eta ** 2 + alpha_i ** 2 + alpha_f ** 2
         return np.sqrt(numerator / denominator)
 
-    def monochromator_twotheta(ki):
+    def monochromator_twotheta():
+        nonlocal ki
         return neutron.bragg_wavenumber2angle(wavenumber=ki, lattice_distance=instr.lattice_distance_pg002)
 
-    def get_uncertainty_ki(ki):
+    def get_uncertainty_ki():
+        nonlocal ki
         # gives the deviation of the wave-number by means of the Bragg's law
         dtheta_mono = angular_spread_monochromator(axis=AXIS_AZIMUTHAL)
-        twotheta_mono = monochromator_twotheta(ki=ki)
+        twotheta_mono = monochromator_twotheta()
         dki_bragg = ki * np.linalg.norm([instr.deltad_d, dtheta_mono / np.tan(twotheta_mono / 2.0)])
         # print(dtheta_mono, np.rad2deg(twotheta_mono), ki * 1e-10, dki_bragg * 1e-10)
         return abs(dki_bragg)
 
     def get_spread_polar():
-        # the spread of the polar angle is given simply by the divergence in both directions since there is no scattering
-        # angles to be taken into consideration in this direction
+        # the spread of the polar angle is given simply by the divergence in both directions,
+        # since there is no scattering angles to be taken into consideration in this direction
         return min(np.deg2rad(1.6), geo.angle_triangle(instr.distance_ms, instr.sample_height))
 
     def get_spread_azimuthal():
         return min(np.deg2rad(1.6), angular_spread_monochromator(axis=AXIS_AZIMUTHAL))
 
-    dki = get_uncertainty_ki(ki=ki)
+    dki = get_uncertainty_ki()
     dtheta = get_spread_azimuthal()
     dphi = get_spread_polar()
     return dki, dtheta, dphi
@@ -124,7 +126,7 @@ def plot_resolution(ki, dqx, dqy, dqz, energy_selection):
     print("{:s} plotted.".format(filename))
 
 
-def get_resolution_velocityselector(ki):
+def resolution_v_selector(ki):
     dk_k = 0.1
     dki = ki * dk_k
     dtheta = np.deg2rad(1.0)
@@ -134,14 +136,18 @@ def get_resolution_velocityselector(ki):
 
 # kf = GeometryContext(side="same").wavenumbers
 # wavelength_incoming = GeometryContext(side="same").wavenumbers * 1e-10  # m, wavelength
-wavenumber_incoming = MushroomContext().wavenumbers_out
+wavenumber_in = MushroomContext().wavenumber_in
 
-dki, dtheta, dphi = get_resolution_monochromator(ki=wavenumber_incoming)
-dqx, dqy, dqz = get_resolution_components(ki=wavenumber_incoming, dki=dki, dtheta=dtheta, dphi=dphi)
-energy_selection = ENERGY_SELECTION_MONOCHROMATOR
-plot_resolution(ki=wavenumber_incoming, dqx=dqx, dqy=dqy, dqz=dqz, energy_selection=energy_selection)
+uncertain_ki, uncertain_theta, uncertain_phi = get_resolution_monochromator(ki=wavenumber_in)
+uncertain_qx, uncertain_qy, uncertain_qz = get_resolution_components(ki=wavenumber_in, dki=uncertain_ki,
+                                                                     dtheta=uncertain_theta,
+                                                                     dphi=uncertain_phi)
+plot_resolution(ki=wavenumber_in, dqx=uncertain_qx, dqy=uncertain_qy, dqz=uncertain_qz,
+                energy_selection=ENERGY_CUT_MONOCHROMATOR)
 
-dki, dtheta, dphi = get_resolution_velocityselector(ki=wavenumber_incoming)
-dqx, dqy, dqz = get_resolution_components(ki=wavenumber_incoming, dki=dki, dtheta=dtheta, dphi=dphi)
-energy_selection = ENERGY_SELECTION_VELOCITY_SELECTOR
-plot_resolution(ki=wavenumber_incoming, dqx=dqx, dqy=dqy, dqz=dqz, energy_selection=energy_selection)
+uncertain_ki, uncertain_theta, uncertain_phi = resolution_v_selector(ki=wavenumber_in)
+uncertain_qx, uncertain_qy, uncertain_qz = get_resolution_components(ki=wavenumber_in, dki=uncertain_ki,
+                                                                     dtheta=uncertain_theta,
+                                                                     dphi=uncertain_phi)
+plot_resolution(ki=wavenumber_in, dqx=uncertain_qx, dqy=uncertain_qy, dqz=uncertain_qz,
+                energy_selection=ENERGY_CUT_VELOCITY_SELECTOR)

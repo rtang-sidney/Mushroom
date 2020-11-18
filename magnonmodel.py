@@ -42,7 +42,8 @@ class MagnonModel:
         else:
             return 0
 
-    def qyqz_to_kf(self, geo_ctx: MushroomContext, de, qy, qz, acute=True):
+    @staticmethod
+    def qyqz_to_kf(geo_ctx: MushroomContext, de, qy, qz, acute=True):
         ki = geo_ctx.wavenumber_in
         kf = np.sqrt(ki ** 2 - 2 * neutron.mass_neutron * de / neutron.planck_constant ** 2)
         if abs(qz / kf) <= 1:
@@ -78,7 +79,7 @@ class MagnonModel:
         magnon_vector = wavevector_transfer - hkl * reci_const
         return self.stiff_const * np.linalg.norm(magnon_vector) ** 2
 
-    def scatt_cross_qxqyde(self, qq_x, qq_y, hw, ki, resol=0.01, qq_z=None, kf=None, pol_angle=None, mushroom=False):
+    def scatt_cross_qxqyde(self, qq_x, qq_y, hw, ki, resol=0.01, qq_z=None, kf=None, mushroom=False):
         if mushroom is True:  # the (Qx,Qy,Qz)-values must satisfy those available in Mushroom
             if abs((hw - (ki ** 2 - kf ** 2) * neutron.planck_constant ** 2 / (2 * neutron.mass_neutron)) / hw) > resol:
                 return None
@@ -96,17 +97,12 @@ class MagnonModel:
 
         reci_const = 2 * np.pi / self.l_const
         hkl = np.round(qq_vector / reci_const)
-        kz = qq_vector[-1] / np.linalg.norm(qq_vector)
         magnon_q = qq_vector - hkl * reci_const
         # it has no symmetry in x-direction, since ki and the reciprocal lattice constant are very likely different
         dd = 2 * self.spin_coup * self.spin * self.l_const ** 2
         magnon_hw = dd * np.linalg.norm(magnon_q) ** 2
         beta = 1.0 / (neutron.boltzmann * self.temp)
         n_q = 1.0 / (np.exp(magnon_hw * beta) - 1)
-        prefactor = (neutron.factor_gamma * neutron.thomson_length) ** 2 * kf / ki * (
-                2 * np.pi / self.l_const) ** 3 * self.spin * (
-                            1 + kz ** 2)
-        debye_waller = 1
         neutrons_lose_energy = geo.dirac_delta_approx(hw, magnon_hw, resol) * (n_q + 1)
         neutrons_gain_energy = geo.dirac_delta_approx(hw, -magnon_hw, resol) * n_q
         return neutrons_lose_energy + neutrons_gain_energy  # prefactor * debye_waller *
@@ -118,7 +114,6 @@ class MagnonModel:
         qq_vector = ki_vector - kf_vector
         reci_const = 2 * np.pi / self.l_const
         hkl = np.round(qq_vector / reci_const)
-        kz = qq_vector[-1] / np.linalg.norm(qq_vector)
         magnon_q = qq_vector - hkl * reci_const
         # it has no symmetry in x-direction, since ki and the reciprocal lattice constant are very likely different
         dd = 2 * self.spin_coup * self.spin * self.l_const ** 2

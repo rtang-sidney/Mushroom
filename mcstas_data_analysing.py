@@ -218,8 +218,8 @@ def scatter_plot_colour(fig, ax, data_x, data_y, data_z, psd_type):
     ax.grid()
 
 
-def get_wavelength_signals(scan_angles, detector_form):
-    angle = scan_angles[0]
+def get_wavelength_signals(angles, detector_form):
+    angle = angles[0]
     filepath = detector_filepath(detector_type=LAMBDA_DETECTOR_PREFIX, detector_form=detector_form,
                                  folder=angle_to_folder(angle))
     signals = np.loadtxt(fname=filepath, comments=COMMENT_SYMBOL)
@@ -231,7 +231,7 @@ def get_wavelength_signals(scan_angles, detector_form):
     signals = np.loadtxt(fname=filepath, comments=COMMENT_SYMBOL)
     intentisities += signals[:, 1]
 
-    for angle in scan_angles[1:]:
+    for angle in angles[1:]:
         filepath = detector_filepath(detector_type=LAMBDA_DETECTOR_PREFIX, detector_form=detector_form,
                                      folder=angle_to_folder(angle))
         signals = np.loadtxt(fname=filepath, comments=COMMENT_SYMBOL)
@@ -263,11 +263,11 @@ def plot_kf_monitor(ax, kf, intensity, title):
     ax.set_ylabel("Intensity")
 
 
-def psd_data(mushroom: MushroomContext, scan_angles, psd_form):
-    angle = scan_angles[0]
+def psd_data(mushroom: MushroomContext, angles, psd_form):
+    angle = angles[0]
     psd = PsdInformation(angle=angle, psd_form=psd_form)
     psd_x, psd_y, psd_intensity = psd.x_1d, psd.y_1d, psd.intensities
-    for angle in scan_angles[1:]:
+    for angle in angles[1:]:
         psd_intensity += PsdInformation(angle, psd_form).intensities
 
     fig, ax = plt.subplots()
@@ -294,9 +294,9 @@ def psd2dispersion(mushroom: MushroomContext, psd_form, psd_x, psd_y, psd_intens
     print("Plot saved: {:s}".format(plot_file))
 
 
-def wavenumber_plot(mushroom: MushroomContext, scan_angles, wavenumber_psd, intensity_psd):
-    wavelength_l, intensity_lvertical = get_wavelength_signals(scan_angles=scan_angles, detector_form=VERTICAL)
-    intensity_lflat = get_wavelength_signals(scan_angles=scan_angles, detector_form=VERTICAL)[-1]
+def wavenumber_plot(mushroom: MushroomContext, angles, wavenumber_psd, intensity_psd):
+    wavelength_l, intensity_lvertical = get_wavelength_signals(angles=angles, detector_form=VERTICAL)
+    intensity_lflat = get_wavelength_signals(angles=angles, detector_form=VERTICAL)[-1]
     wavenumber_l = 2.0 * np.pi / wavelength_l
     intensity_l = intensity_lvertical + intensity_lflat
 

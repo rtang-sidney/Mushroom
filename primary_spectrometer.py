@@ -1,8 +1,8 @@
 import matplotlib.pyplot as plt
 import numpy as np
-from helper import InstrumentContext, wavelength_to_wavenumber, angle_triangle
+from helper import InstrumentContext, NeutronContext, angle_triangle
 from neutron_scattering import wavenumber_2theta_bragg
-from geometry_context import GeometryContext
+from geometry_context import MushroomContext
 
 ZERO_TOL = 1e-6
 ENERGY_SELECTION_MONOCHROMATOR = "Monochromator"
@@ -132,10 +132,10 @@ def get_resolution_velocityselector(instrument: InstrumentContext, ki):
 
 
 instrumentctx = InstrumentContext()
-
+neutronctx = NeutronContext()
 # kf = GeometryContext(side="same").wavenumbers
 # wavelength_incoming = GeometryContext(side="same").wavenumbers * 1e-10  # m, wavelength
-wavenumber_incoming = GeometryContext().wavenumbers_out
+wavenumber_incoming = MushroomContext().wavenumbers_out
 
 dki, dtheta, dphi = get_resolution_monochromator(instrument=instrumentctx, ki=wavenumber_incoming)
 dqx, dqy, dqz = get_resolution_components(ki=wavenumber_incoming, dki=dki, dtheta=dtheta, dphi=dphi)

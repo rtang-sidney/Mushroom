@@ -1,10 +1,11 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import re
-from geometry_context import GeometryContext
-from helper import InstrumentContext, MASS_NEUTRON, PLANCKS_CONSTANT, \
-    CONVERSION_JOULE_PER_EV, dispersion_signal
 import sys
+import geometry_calculation as geo
+import neutron_context as neutron
+import instrument_context as instr
+from mushroom_context import MushroomContext
 
 np.set_printoptions(threshold=sys.maxsize, precision=2)
 
@@ -60,8 +61,6 @@ class PsdInformation:
         self.scan_angle = angle
         folder = self.angle_to_folder(angle=self.scan_angle)
         filename = "/".join([folder, file_psd])
-        geometryctx = GeometryContext()
-        instrumentctx = InstrumentContext()
         f = open(file=filename).readlines()
         keys = []
         contents = []
@@ -125,7 +124,7 @@ class PsdInformation:
     def _get_psdcyl_middle(self):
         return float(re.search(pattern=PATTERN_POSITION, string=self.metadata_dict[KEY_POSITION]).group(2))
 
-    def _psd_signal_adjust(self, x, y, intensity, geo_ctx: GeometryContext):
+    def _psd_signal_adjust(self, x, y, intensity, geo_ctx: MushroomContext):
         component = self.metadata_dict[KEY_COMPONENT]
         if component == PSDCYL_COMPONENT:
             x = np.deg2rad(x)
@@ -146,22 +145,17 @@ class PsdInformation:
 
 
 def folder_name(instrument, day, month, year, hms):
-    if isinstance(instrument, str):
-        if isinstance(day, int):
-            if isinstance(month, int):
-                if isinstance(year, int):
-                    if isinstance(hms, int):
-                        pass
-                    else:
-                        raise RuntimeError("Invalid type of time of day.")
-                else:
-                    raise RuntimeError("Invalid type of year.")
-            else:
-                raise RuntimeError("Invalid type of month.")
-        else:
-            raise RuntimeError("Invalid type of day.")
-    else:
+    if isinstance(instrument, str) is False:
         raise RuntimeError("Invalid type of instrument name.")
+    if isinstance(day, int) is False:
+        raise RuntimeError("Invalid type of day.")
+    if isinstance(month, int) is False:
+        raise RuntimeError("Invalid type of month.")
+    if isinstance(year, int) is False:
+        raise RuntimeError("Invalid type of year.")
+    if isinstance(hms, int) is False:
+        raise RuntimeError("Invalid type of time of day.")
+
     day = str(day)
     month = str(month)
     year = str(year)
@@ -178,7 +172,7 @@ def folder_name(instrument, day, month, year, hms):
         raise RuntimeError("Invalid length of the date parameters.")
 
 
-def position2dispersion(x, y, psd_comp, geo_ctx: GeometryContext):
+def position2dispersion(x, y, psd_comp, geo_ctx: MushroomContext):
     ki = geo_ctx.wavenumber_in
     # azi_1d = np.linspace(-np.pi, np.pi, num=361)
     # azi_2d, pol_2d = np.meshgrid(azi_1d, geo_ctx.polar_angles)
@@ -224,7 +218,7 @@ def position2dispersion(x, y, psd_comp, geo_ctx: GeometryContext):
     qy = -kfy
     qz = -kfz
     # q_2d = np.linalg.norm([qx_2d, qy_2d, qz_2d], axis=0)
-    omega_joule = PLANCKS_CONSTANT ** 2 / (2.0 * MASS_NEUTRON) * (ki ** 2 - kf ** 2)
+    omega_joule = neutron.planck_constant ** 2 / (2.0 * neutron.mass_neutron) * (ki ** 2 - kf ** 2)
     return kf, qx, qy, qz, omega_joule
 
 
@@ -262,7 +256,7 @@ def plot_ax_2d(fig, ax, x_2d, y_2d, z_2d, psd_comp, subplot_index=None):
     ax.grid()
 
 
-geometryctx = GeometryContext()
+geometryctx = MushroomContext()
 
 ki = geometryctx.wavenumber_in * 1e-10
 
@@ -288,7 +282,7 @@ for angle in scan_angles[1:]:
                                                               intensities_vertical=intensities_vertical)
 
 
-def psd_calc_plot(geo_ctx: GeometryContext, psd_type):
+def psd_calc_plot(geo_ctx: MushroomContext, psd_type):
     fig, ax = plt.subplots()
     if psd_type == PSDVERT_COMPONENT:
         plot_ax_2d(fig=fig, ax=ax, x_2d=np.rad2deg(x_pos_vertical), y_2d=y_pos_vertical, z_2d=intensities_vertical,
@@ -298,7 +292,6 @@ def psd_calc_plot(geo_ctx: GeometryContext, psd_type):
     plt.tight_layout()
     plt.savefig("_".join([FOLDER_DATE, "Data_collection_{:s}.pdf".format(psd_type)]), bbox_inches='tight')
     plt.close(fig)
-
 
 
 azi_flat_2d = np.rad2deg(np.arctan2(y_pos_flat, x_pos_flat))

@@ -1,47 +1,6 @@
 import numpy as np
-import matplotlib.pyplot as plt
 
 ZERO_TOL = 1e-6
-MASS_NEUTRON = 1.67492749804e-27  # kg
-PLANCKS_CONSTANT = 1.0545718e-34  # m2 kg / s, h-bar
-CONVERSION_JOULE_PER_EV = 1.602176634e-19  # J / eV
-BOLTZMANN = 1.380649e-23  # J / K
-FACTOR_GAMMA = 1.913  # dimensionless constant
-THOMSON_SCATT_LENGTH = 2.818e-15  # m, classical radius of electrons
-
-
-class InstrumentContext(object):
-    def __init__(self):
-        self.moasic_pg002 = np.deg2rad(0.4)  # radian, PG crystal mosaic
-        self.moasic_analyser = np.deg2rad(0.4)  # radian, analyser mosaic
-        self.deltad_d = 6e-4  # relative uncertainty of the lattice distance, given in [paper2]
-        self.lattice_distance_pg002 = 3.35e-10  # m, lattice distance d of a PG crystal
-        self.an_seg = 1e-2  # m, the size of an analyser segment in 1D
-        self.distance_ms = 1.0  # m, monochromator-sample distance
-        self.divergence_initial = np.deg2rad(1.6)  # initial divergence directly from the neutron guide
-        self.sample_diameter = 1e-2  # m
-        self.sample_height = 1e-2  # m
-        self.detector_resolution = 1e-2  # m, the positional resolution of the position-sensitive detectors
-
-
-def wavelength_to_wavenumber(wavelength):
-    return 2.0 * np.pi / wavelength
-
-
-def wavenumber_to_wavelength(wavenumber):
-    return 2.0 * np.pi / wavenumber
-
-
-def wavelength_to_joule(wavelength):
-    return 2 * np.pi ** 2 * PLANCKS_CONSTANT ** 2 / (MASS_NEUTRON * wavelength ** 2)
-
-
-def wavelength_to_eV(wavelength):
-    return wavelength_to_joule(wavelength) / CONVERSION_JOULE_PER_EV
-
-
-def energy_to_wavevector(energy):
-    return np.sqrt(2 * MASS_NEUTRON * energy) / PLANCKS_CONSTANT
 
 
 def points_distance(point1, point2):
@@ -51,13 +10,6 @@ def points_distance(point1, point2):
 
 
 def angle_vectors(vector1, vector2):
-    """
-    Returns the angle between vector1 and vector2 in radians
-
-    :param vector1:
-    :param vector2:
-    :return:
-    """
     vector1 = np.array(vector1)
     vector2 = np.array(vector2)
     return np.arccos(np.dot(vector1, vector2) / (np.linalg.norm(vector1) * np.linalg.norm(vector2)))
@@ -81,7 +33,7 @@ def points_bisecting_line(point1, point2):
 
 
 def points_to_line(point1, point2):
-    def get_line_through_origin(point):
+    def line_through_origin(point):
         # gives the line parameters if the line goes through the origin (0,0)
         if abs(point[0]) < ZERO_TOL:  # when the other point is on the y-axis, too
             return 0.0, 1.0, 0.0
@@ -89,9 +41,9 @@ def points_to_line(point1, point2):
             return point[1] / point[0], -1.0, 0.0
 
     if np.linalg.norm(point1) < ZERO_TOL:
-        return get_line_through_origin(point2)
+        return line_through_origin(point2)
     elif np.linalg.norm(point2) < ZERO_TOL:
-        return get_line_through_origin(point1)
+        return line_through_origin(point1)
     else:  # if no point is at the origin
         x1 = point1[0]
         y1 = point1[1]
@@ -175,7 +127,7 @@ def deg2min(angle_in_degree):
         raise ValueError("Invalid angle given")
 
 
-def distance_point2line(point, line):
+def distance_point_line(point, line):
     # gives the distance from a point (x0,y0) to a line ax+by+c=0
     # works also for multiple points with points=(x_values, y_values), where both x and y values are numpy arrays with
     # the same length
@@ -184,43 +136,10 @@ def distance_point2line(point, line):
     return np.abs((a * x0 + b * y0 + c) / np.linalg.norm([a, b]))
 
 
-def dispersion_signal(range_x, range_y, data_x, data_y, intensity=None, energy=None):
-    # print(range_x.shape, range_y.shape, data_x.shape, data_y.shape, intensity.shape)
-    inten_new_2d = np.full((range_y.shape[0], range_x.shape[0]), np.nan)
-    x_index = np.searchsorted(range_x, data_x)
-    y_index = np.searchsorted(range_y, data_y)
-    if len(x_index.shape) == len(y_index.shape) == 2:
-        pass
-    elif len(x_index.shape) == 1 and len(y_index.shape) == 2:
-        x_index = np.array(list(map(lambda x: x_index, range(y_index.shape[0]))))
-    elif len(x_index.shape) == 2 and len(y_index.shape) == 1:
-        y_index = np.array(list(map(lambda x: np.full(x_index.shape[1], x), y_index)))
-    elif len(x_index.shape) == len(y_index.shape) == 1:
-        pass
-    else:
-        raise RuntimeError("Invalid shapes of x and y data given.")
-
-    if intensity is not None and energy is not None:
-        raise RuntimeError("Only either of the intensity or the energy-transfer can be dealt with.")
-    elif intensity is not None:
-        inten_new_2d[y_index, x_index] = 0
-        np.add.at(inten_new_2d, (y_index, x_index), intensity)
-    elif energy is not None:
-        inten_new_2d[y_index, x_index] = energy
-    else:
-        raise RuntimeError("Signal not provided. Give in either the intensity or the energy transfer.")
-    return inten_new_2d
-
-
 def data2range(data, number_points=None):
     if number_points is None:
         number_points = data.shape[0]
     return np.linspace(np.min(data), np.max(data), num=number_points)
-
-
-def wavenumber_vector(wavenumber, azi_angle, pol_angle):
-    return wavenumber * np.array(
-        [np.cos(pol_angle) * np.cos(azi_angle), np.cos(pol_angle) * np.sin(azi_angle), np.sin(pol_angle)])
 
 
 def rotation_around_z(rot_angle, old_x, old_y):

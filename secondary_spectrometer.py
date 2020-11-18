@@ -1,10 +1,10 @@
 import matplotlib.pyplot as plt
 import numpy as np
-from geometry_context import GeometryContext
+from mushroom_context import MushroomContext
 from magnonmodel import MagnonModel
-from helper import wavelength_to_eV, points_distance, vector_bisector, InstrumentContext, points_to_vector, \
-    points_to_slope_radian, unit_vector, vector_project_a2b, deg2min, points_bisecting_line, line_to_y, \
-    PLANCKS_CONSTANT, MASS_NEUTRON, CONVERSION_JOULE_PER_EV, rotation_around_z, wavenumber_vector
+import geometry_calculation as geo
+import neutron_context as neutron
+import instrument_context as instr
 from mpl_toolkits.mplot3d import Axes3D
 
 plt.rcParams.update({'font.size': 16})
@@ -58,9 +58,9 @@ def monochromator_angular_spread(divergence_in, divergence_out, mosaic):
     return np.sqrt(numerator / denominator)
 
 
-def angular_res_an(geo_ctx: GeometryContext, instrument: InstrumentContext, an_index):
-    eta = instrument.moasic_analyser  # mosaic
-    alpha_i, alpha_f = vertical_divergence_analyser(geo_ctx=geo_ctx, instrument=instrument,
+def angular_res_an(geo_ctx: MushroomContext, an_index):
+    eta = instr.moasic_analyser  # mosaic
+    alpha_i, alpha_f = vertical_divergence_analyser(geo_ctx=geo_ctx,
                                                     analyser_index=an_index)  # incoming and outgoing divergence
     # For the formula see [Paper1]
     numerator = alpha_i ** 2 * alpha_f ** 2 + eta ** 2 * alpha_i ** 2 + eta ** 2 * alpha_f ** 2
@@ -69,77 +69,77 @@ def angular_res_an(geo_ctx: GeometryContext, instrument: InstrumentContext, an_i
     return np.sqrt(numerator / denominator)
 
 
-def uncert_kf(geo_ctx: GeometryContext, instrument: InstrumentContext, an_ind_now, an_ind_near):
+def uncert_kf(geo_ctx: MushroomContext, an_ind_now, an_ind_near):
     kf_now = geo_ctx.wavenumbers_out[an_ind_now]
     kf_near = geo_ctx.wavenumbers_out[an_ind_near]
     angular_uncertainty_analyser = monochromator_angular_spread(
-        *vertical_divergence_analyser(geo_ctx=geo_ctx, instrument=instrument, analyser_index=an_ind_now),
-        mosaic=instrument.moasic_analyser)
+        *vertical_divergence_analyser(geo_ctx=geo_ctx, analyser_index=an_ind_now),
+        mosaic=instr.moasic_analyser)
     twotheta_an = geo_ctx.an_2theta[an_ind_now]
     uncertainty_kf_bragg = kf_now * np.linalg.norm(
-        [instrument.deltad_d, angular_uncertainty_analyser / np.tan(twotheta_an / 2.0)])  # from Bragg's law
+        [instr.deltad_d, angular_uncertainty_analyser / np.tan(twotheta_an / 2.0)])  # from Bragg's law
     uncertainty_kf_segment = abs(kf_now - kf_near)
     return max(uncertainty_kf_bragg, uncertainty_kf_segment)
 
 
-def uncert_pol(geo_ctx: GeometryContext, instrument: InstrumentContext, an_index):
-    divergence = angular_res_an(geo_ctx=geo_ctx, instrument=instrument, an_index=an_index)
+def uncert_pol(geo_ctx: MushroomContext, an_index):
+    divergence = angular_res_an(geo_ctx=geo_ctx, an_index=an_index)
     # the uncertainty of the polar angle is given by the angular resolution at the analyser
-    # return get_angular_resolution_analyser(geo_ctx=geo_ctx, instrument=instrument, analyser_point=analyser_point)
+    # return get_angular_resolution_analyser(geo_ctx=geo_ctx,  analyser_point=analyser_point)
     return divergence
 
 
-def uncert_azi(geo_ctx: GeometryContext, instrument: InstrumentContext, an_index):
+def uncert_azi(geo_ctx: MushroomContext, an_index):
     an_point = (geo_ctx.analyser_points[0][an_index], geo_ctx.analyser_points[1][an_index])
     # sa: sample-analyser; af: analyser-focus
-    distance_sa = points_distance(point1=geo_ctx.sample_point, point2=an_point)
-    distance_af = points_distance(point1=an_point, point2=geo_ctx.foc_point)
-    uncert_azi_sa = 2.0 * np.arctan((instrument.an_seg + instrument.sample_diameter) / (2.0 * distance_sa))
-    uncert_azi_af = 2.0 * np.arctan((instrument.an_seg + geo_ctx.foc_size) / (2.0 * distance_af))
+    distance_sa = geo.points_distance(point1=geo_ctx.sample_point, point2=an_point)
+    distance_af = geo.points_distance(point1=an_point, point2=geo_ctx.foc_point)
+    uncert_azi_sa = 2.0 * np.arctan((instr.an_seg + instr.sample_diameter) / (2.0 * distance_sa))
+    uncert_azi_af = 2.0 * np.arctan((instr.an_seg + geo_ctx.foc_size) / (2.0 * distance_af))
     return min(uncert_azi_sa, uncert_azi_af)
 
 
-def de_of_e_from_an(geo_ctx: GeometryContext, instrument: InstrumentContext, an_ind_now, an_ind_near):
+def de_of_e_from_an(geo_ctx: MushroomContext, an_ind_now, an_ind_near):
     kf_now = geo_ctx.wavenumbers_out[an_ind_now]
-    delta_kf = uncert_kf(geo_ctx, instrument, an_ind_now=an_ind_now, an_ind_near=an_ind_near) * spread_factor_detector(
-        geo_ctx=geo_ctx, instrument=instrument, index_now=an_ind_now, index_nearest=an_ind_near)[0]
+    delta_kf = uncert_kf(geo_ctx, an_ind_now=an_ind_now, an_ind_near=an_ind_near) * spread_factor_detector(
+        geo_ctx=geo_ctx, index_now=an_ind_now, index_nearest=an_ind_near)[0]
     return 2. * delta_kf / kf_now
 
 
 # def get_divergence(sample, analyser_point, focus, sample_size, focus_size):
-def vertical_divergence_analyser(geo_ctx: GeometryContext, instrument: InstrumentContext, analyser_index):
+def vertical_divergence_analyser(geo_ctx: MushroomContext, analyser_index):
     # sa: sample-analyser; af: analyser-focus
     analyser_point = (geo_ctx.analyser_points[0][analyser_index], geo_ctx.analyser_points[1][analyser_index])
-    vector_sa = points_to_vector(point1=geo_ctx.sample_point, point2=analyser_point)
-    vector_af = points_to_vector(point1=analyser_point, point2=geo_ctx.foc_point)
-    vector_tangential = vector_bisector(vector_sa, vector_af)
-    segment_analyser = unit_vector(vector_tangential) * instrument.an_seg
-    analyser_incoming_projection = vector_project_a2b(segment_analyser, vector_sa)
+    vector_sa = geo.points_to_vector(point1=geo_ctx.sample_point, point2=analyser_point)
+    vector_af = geo.points_to_vector(point1=analyser_point, point2=geo_ctx.foc_point)
+    vector_tangential = geo.vector_bisector(vector_sa, vector_af)
+    segment_analyser = geo.unit_vector(vector_tangential) * instr.an_seg
+    analyser_incoming_projection = geo.vector_project_a2b(segment_analyser, vector_sa)
     analyser_incoming_rejection = segment_analyser - analyser_incoming_projection
-    analyser_outgoing_projection = vector_project_a2b(segment_analyser, vector_af)
+    analyser_outgoing_projection = geo.vector_project_a2b(segment_analyser, vector_af)
     analyser_outgoing_rejection = segment_analyser - analyser_outgoing_projection
 
-    divergence_in = 2 * np.arctan((instrument.sample_height * abs(
-        np.cos(points_to_slope_radian(point1=geo_ctx.sample_point, point2=analyser_point))) + np.linalg.norm(
+    divergence_in = 2 * np.arctan((instr.sample_height * abs(
+        np.cos(geo.points_to_slope_radian(point1=geo_ctx.sample_point, point2=analyser_point))) + np.linalg.norm(
         analyser_incoming_rejection)) / (2.0 * np.linalg.norm(vector_sa)))
     divergence_out = 2 * np.arctan((geo_ctx.foc_size * abs(
-        np.sin(points_to_slope_radian(point1=analyser_point, point2=geo_ctx.foc_point))) + np.linalg.norm(
+        np.sin(geo.points_to_slope_radian(point1=analyser_point, point2=geo_ctx.foc_point))) + np.linalg.norm(
         analyser_outgoing_rejection)) / (2.0 * np.linalg.norm(vector_af)))
-    # divergence_in = instrument.sample_size / distance_sa
+    # divergence_in = instr.sample_size / distance_sa
     # divergence_out = geo_ctx.focus_size / distance_af
     # print(divergence_in, divergence_out)
     return divergence_in, divergence_out
 
 
-def kf_resol_mcstas(geo_ctx: GeometryContext, instrument: InstrumentContext, index_now, index_nearest):
-    factor_polar, factor_azimuth = spread_factor_detector(geo_ctx=geo_ctx, instrument=instrument, index_now=index_now,
+def kf_resol_mcstas(geo_ctx: MushroomContext, index_now, index_nearest):
+    factor_polar, factor_azimuth = spread_factor_detector(geo_ctx=geo_ctx, index_now=index_now,
                                                           index_nearest=index_nearest)
     # factor_polar, factor_azimuth = 1, 1
-    dkf = uncert_kf(geo_ctx, instrument=instrument, an_ind_now=index_now,
+    dkf = uncert_kf(geo_ctx, an_ind_now=index_now,
                     an_ind_near=index_nearest) * factor_polar
-    dphi = uncert_pol(geo_ctx, instrument=instrument, an_index=index_now) * factor_polar
+    dphi = uncert_pol(geo_ctx, an_index=index_now) * factor_polar
     # delta_phi = np.sqrt(np.sum(np.square([divergence_analyser_point(geo_ctx, analyser_point=analyser_point)])))
-    dtheta = uncert_azi(geo_ctx=geo_ctx, instrument=instrument,
+    dtheta = uncert_azi(geo_ctx=geo_ctx,
                         an_index=index_now) * factor_azimuth
     kf = geo_ctx.wavenumbers_out[index_now]
     dkf_x = kf * np.tan(dtheta)
@@ -149,7 +149,9 @@ def kf_resol_mcstas(geo_ctx: GeometryContext, instrument: InstrumentContext, ind
 
 
 # to compare the analyser generated by the two different methods
-def plot_analyser_comparison(points_x, points_y, points_analyser_x, points_analyser_y):
+def plot_analyser_comparison(geo_ctx: MushroomContext):
+    points_analyser_x, points_analyser_y = geo_ctx.theo_ellipse_points[0], geo_ctx.theo_ellipse_points[1]
+    points_x = geo_ctx.analyser_points[0], points_y = geo_ctx.analyser_points[1]
     plt.figure(10)
     ax = plt.gca()
     ax.spines['right'].set_visible(False)
@@ -159,7 +161,7 @@ def plot_analyser_comparison(points_x, points_y, points_analyser_x, points_analy
     plt.legend((r"Segments with 1x1 cm$^2$", "Ideal ellipse"))
     plt.text(0.3, -0.3, "Number of segments in one cut-plane: {:d}".format(len(points_x)))
     plt.text(0.3, -0.35, "Largest deviation from the ideal ellipse: {:5.2f} m".format(
-        points_distance([points_x[-1], points_y[-1]], [points_analyser_x[-1], points_analyser_y[-1]])))
+        geo.points_distance([points_x[-1], points_y[-1]], [points_analyser_x[-1], points_analyser_y[-1]])))
     plt.xlabel("x axis (m)")
     plt.ylabel("y axis (m)")
     plt.plot(*geometryctx.sample_point, "ro")
@@ -170,22 +172,22 @@ def plot_analyser_comparison(points_x, points_y, points_analyser_x, points_analy
     plt.plot([geometryctx.sample_point[0], geometryctx.foc_point[0]],
              [geometryctx.sample_point[1], geometryctx.foc_point[1]])
     bisecting_x = np.array([0.75, 1])
-    plt.plot(bisecting_x, line_to_y(bisecting_x, points_bisecting_line(point1=geometryctx.sample_point,
-                                                                       point2=geometryctx.foc_point)))
+    plt.plot(bisecting_x, geo.line_to_y(bisecting_x, geo.points_bisecting_line(point1=geometryctx.sample_point,
+                                                                               point2=geometryctx.foc_point)))
     plt.axis("equal")
 
     plt.savefig("Geometry_Comparison.pdf", bbox_inches='tight')
     plt.close(10)
 
 
-def plot_geometry(geo_ctx: GeometryContext, instrument: InstrumentContext):
+def plot_geometry(geo_ctx: MushroomContext):
     # to plot the geometry with important parameters
-    def plot_for_analyser_point(geo_ctx: GeometryContext, instrument: InstrumentContext, index_now, index_nearest):
-        energy_ev = wavelength_to_eV(
-            wavelength=geo_ctx.wavelength_bragg(instrument=instrument, index=index_now))
-        e_res_ev = de_of_e_from_an(geo_ctx=geo_ctx, instrument=instrument, an_ind_now=index_now,
-                                   an_ind_near=index_nearest)
-        e_res_ev *= energy_ev
+    def plot_for_analyser_point(geo_ctx: MushroomContext, index_now, index_nearest):
+        energy_out = neutron.wavelength2energy(
+            wavelength=geo_ctx.wavelength_bragg(index=index_now))
+        res_ef = de_of_e_from_an(geo_ctx=geo_ctx, an_ind_now=index_now,
+                                 an_ind_near=index_nearest)
+        res_ef *= energy_out
         analyser_point = (geo_ctx.analyser_points[0][index_now], geo_ctx.analyser_points[1][index_now])
         detector_point = (geo_ctx.detector_points[0][index_now], geo_ctx.detector_points[1][index_now])
         line_sp_plot = ([geo_ctx.sample_point[0], analyser_point[0]], [geo_ctx.sample_point[1], analyser_point[1]])
@@ -200,9 +202,9 @@ def plot_geometry(geo_ctx: GeometryContext, instrument: InstrumentContext):
 
         plt.plot(analyser_point[0], analyser_point[1], "ko")
         plt.text(x=-analyser_point[0] * 1.1 - 0.5, y=analyser_point[1] * 1.05 + 0.05,
-                 s="{:5.2f}".format(energy_ev * 1e3))
+                 s="{:5.2f}".format(neutron.joule2mev(energy_out)))
         plt.text(x=analyser_point[0] * 1.1, y=analyser_point[1] * 1.05 + 0.05,
-                 s="{:5.2f}".format(e_res_ev * 1e6))
+                 s="{:5.2f}".format(neutron.joule2mev(res_ef) * 1e3))
 
     plt.rcParams.update({'font.size': 12})
 
@@ -218,11 +220,11 @@ def plot_geometry(geo_ctx: GeometryContext, instrument: InstrumentContext):
     plt.text(-3, -3.1, "Wavenumber covered by the analyser " + r"$k_f \in$ [{:.2f}, {:.2f}]".format(
         np.min(geometryctx.wavenumbers_out) * 1e-10, np.max(geometryctx.wavenumbers_out) * 1e-10) + r" $\AA^{-1}$")
 
-    plot_for_analyser_point(geo_ctx=geo_ctx, instrument=instrument, index_now=0, index_nearest=1)
-    plot_for_analyser_point(geo_ctx=geo_ctx, instrument=instrument, index_now=-1, index_nearest=-2)
+    plot_for_analyser_point(geo_ctx=geo_ctx, index_now=0, index_nearest=1)
+    plot_for_analyser_point(geo_ctx=geo_ctx, index_now=-1, index_nearest=-2)
 
     index_largest_energy = np.argmax(geo_ctx.wavenumbers_out)
-    plot_for_analyser_point(geo_ctx=geo_ctx, instrument=instrument, index_now=index_largest_energy,
+    plot_for_analyser_point(geo_ctx=geo_ctx, index_now=index_largest_energy,
                             index_nearest=index_largest_energy + 1)
 
     # mark the position of the sample and focus, and plot the detector
@@ -242,14 +244,14 @@ def plot_geometry(geo_ctx: GeometryContext, instrument: InstrumentContext):
     print("{:s} plotted.".format(geo_ctx.filename_geo))
 
 
-def write_mcstas(geo_ctx: GeometryContext, instrument: InstrumentContext):
+def write_mcstas(geo_ctx: MushroomContext):
     # to write the file giving the information of the analyser array for the McStas simulation
     f = open(geo_ctx.filename_mcstas, 'w+')
-    value_width_z = instrument.an_seg
-    value_height_y = instrument.an_seg
-    value_mosaic_horizontal = deg2min(np.rad2deg(instrument.moasic_analyser))
-    value_mosaic_vertical = deg2min(np.rad2deg(instrument.moasic_analyser))
-    value_lattice_distance = instrument.lattice_distance_pg002 * 1e10  # it is in angstrom for McStas
+    value_width_z = instr.an_seg
+    value_height_y = instr.an_seg
+    value_mosaic_horizontal = geo.deg2min(np.rad2deg(instr.moasic_analyser))
+    value_mosaic_vertical = geo.deg2min(np.rad2deg(instr.moasic_analyser))
+    value_lattice_distance = instr.lattice_distance_pg002 * 1e10  # it is in angstrom for McStas
     value_position_y = geo_ctx.analyser_points[1]
     value_position_z = geo_ctx.analyser_points[0]
     value_rotation_x = -np.rad2deg(geo_ctx.mcstas_rotation_rad)
@@ -270,14 +272,11 @@ def write_mcstas(geo_ctx: GeometryContext, instrument: InstrumentContext):
         string_analyser = string_an1 + string_an2 + string_an3 + string_an4
         f.write(string_analyser)
     f.close()
-    pass
 
 
-def plot_resolution_polarangles(geo_ctx: GeometryContext, polar_angles, all_dqx_m, all_dqy_m, all_dqz_m, all_kf):
+def plot_resolution_polarangles(geo_ctx: MushroomContext):
     # to plot the resolution with the x-axis being the polar angle
     # is more realistic since the same kf-value can originate from two angles
-    plt.rcParams.update({'font.size': 12})
-    polar_angles = np.rad2deg(polar_angles)
 
     def forward(x):
         return np.interp(x, polar_angles, all_kf * 1e-10)
@@ -287,6 +286,10 @@ def plot_resolution_polarangles(geo_ctx: GeometryContext, polar_angles, all_dqx_
         kf_sort = all_kf[kf_sort_indeces] * 1e-10
         polar_angles_sort = polar_angles[kf_sort_indeces]
         return np.interp(x, kf_sort, polar_angles_sort)
+
+    polar_angles = np.rad2deg(geo_ctx.pol_angles)
+    all_kf = geo_ctx.wavenumbers_out
+    all_dqx_m, all_dqy_m, all_dqz_m = resolution_calculation(geo_ctx=geo_ctx)
 
     fig, ax = plt.subplots(constrained_layout=True)
     ax.plot(polar_angles, all_dqx_m * 1e-10, color="blue")
@@ -317,11 +320,11 @@ def plot_resolution_polarangles(geo_ctx: GeometryContext, polar_angles, all_dqx_
     print("{:s} plotted.".format(filename))
 
 
-def plot_resolution_kf(geo_ctx: GeometryContext, all_dqx_m, all_dqy_m, all_dqz_m):
+def plot_resolution_kf(geo_ctx: MushroomContext):
     # to plot the resolution with the x-axis being the outgoing wave-number
     all_kf = geo_ctx.wavenumbers_out
-    plt.rcParams.update({'font.size': 12})
     max_index = np.argmax(all_kf)
+    all_dqx_m, all_dqy_m, all_dqz_m = resolution_calculation(geo_ctx=geo_ctx)
 
     fig, ax = plt.subplots(constrained_layout=True)
     ax.plot(all_kf[max_index:] * 1e-10, all_dqx_m[max_index:] * 1e-10, color="blue")
@@ -349,40 +352,40 @@ def plot_resolution_kf(geo_ctx: GeometryContext, all_dqx_m, all_dqy_m, all_dqz_m
     print("{:s} plotted.".format(filename))
 
 
-def resolution_calculation(geo_ctx: GeometryContext, instrument: InstrumentContext):
-    all_dqx_m = np.array(list(map(lambda i: kf_resol_mcstas(geo_ctx=geo_ctx, instrument=instrument, index_now=i,
+def resolution_calculation(geo_ctx: MushroomContext):
+    all_dqx_m = np.array(list(map(lambda i: kf_resol_mcstas(geo_ctx=geo_ctx, index_now=i,
                                                             index_nearest=1 if i == 0 else i - 1)[0],
                                   range(geo_ctx.pol_angles.shape[0]))))
-    all_dqy_m = np.array(list(map(lambda i: kf_resol_mcstas(geo_ctx=geo_ctx, instrument=instrument, index_now=i,
+    all_dqy_m = np.array(list(map(lambda i: kf_resol_mcstas(geo_ctx=geo_ctx, index_now=i,
                                                             index_nearest=1 if i == 0 else i - 1)[1],
                                   range(geo_ctx.pol_angles.shape[0]))))
-    all_dqz_m = np.array(list(map(lambda i: kf_resol_mcstas(geo_ctx=geo_ctx, instrument=instrument, index_now=i,
+    all_dqz_m = np.array(list(map(lambda i: kf_resol_mcstas(geo_ctx=geo_ctx, index_now=i,
                                                             index_nearest=1 if i == 0 else i - 1)[2],
                                   range(geo_ctx.pol_angles.shape[0]))))
     return all_dqx_m, all_dqy_m, all_dqz_m
 
 
-def spread_factor_detector(geo_ctx: GeometryContext, instrument: InstrumentContext, index_now, index_nearest):
+def spread_factor_detector(geo_ctx: MushroomContext, index_now, index_nearest):
     an_point = (geo_ctx.analyser_points[0][index_now], geo_ctx.analyser_points[1][index_now])
     detector_now = [geo_ctx.detector_points[0][index_now], geo_ctx.detector_points[1][index_now]]
     detector_next = [geo_ctx.detector_points[0][index_nearest], geo_ctx.detector_points[1][index_nearest]]
-    spread_factor_polar = max(1, instrument.detector_resolution / points_distance(detector_now, detector_next))
+    spread_factor_polar = max(1, instr.detector_resolution / geo.points_distance(detector_now, detector_next))
 
-    detector_spread_azi = instrument.an_seg * points_distance(detector_now, geo_ctx.foc_point) / points_distance(
+    detector_spread_azi = instr.an_seg * geo.points_distance(detector_now, geo_ctx.foc_point) / geo.points_distance(
         an_point, geo_ctx.foc_point)
-    spread_factor_azi = max(1, instrument.detector_resolution / detector_spread_azi)
+    spread_factor_azi = max(1, instr.detector_resolution / detector_spread_azi)
     return spread_factor_polar, spread_factor_azi
 
 
-def distances_fd_as(geo_ctx: GeometryContext, index):
-    distance_fd = points_distance(point1=geo_ctx.foc_point,
-                                  point2=[geo_ctx.detector_points[0][index], geo_ctx.detector_points[1][index]])
-    distance_as = points_distance(point1=geo_ctx.foc_point,
-                                  point2=[geo_ctx.analyser_points[0][index], geo_ctx.analyser_points[1][index]])
+def distances_fd_as(geo_ctx: MushroomContext, index):
+    distance_fd = geo.points_distance(point1=geo_ctx.foc_point,
+                                      point2=[geo_ctx.detector_points[0][index], geo_ctx.detector_points[1][index]])
+    distance_as = geo.points_distance(point1=geo_ctx.foc_point,
+                                      point2=[geo_ctx.analyser_points[0][index], geo_ctx.analyser_points[1][index]])
     return distance_fd / distance_as
 
 
-def plot_distance_fd_as(geo_ctx: GeometryContext):
+def plot_distance_fd_as(geo_ctx: MushroomContext):
     ratio_fd_af = np.array(
         list(map(lambda i: distances_fd_as(geo_ctx=geo_ctx, index=i), range(geometryctx.pol_angles.shape[0]))))
     fig, ax = plt.subplots()
@@ -400,7 +403,7 @@ def plot_distance_fd_as(geo_ctx: GeometryContext):
     plt.close(fig)
 
 
-def wavenumbers_psd(geo_ctx: GeometryContext):
+def wavenumbers_psd(geo_ctx: MushroomContext):
     kf = geo_ctx.wavenumbers_out
     detec_hori_x = geo_ctx.dete_hori_x
     detec_vert_y = geo_ctx.dete_vert_y
@@ -413,49 +416,8 @@ def wavenumbers_psd(geo_ctx: GeometryContext):
     axs[0].grid()
     axs[1].grid()
     fig.suptitle(r"Outgoing wavenumbers - PSD positions")
-    plt.tight_layout(fig, rect=[0, 0, 1, 0.95])
     plt.savefig("kf_values_psd_positions.pdf")
     plt.close(fig)
-
-
-geometryctx = GeometryContext()
-instrumentctx = InstrumentContext()
-# magnonmdl = MagnonModel()
-magnonmdl = MagnonModel(latt_const=2.859e-10,
-                        stiff_const=266 * 1e-3 * CONVERSION_JOULE_PER_EV * 1e-20)  # parameters for bcc-Fe
-
-print("The index of the segment in the middle of the polar angle range: {:d}".format(
-    int(geometryctx.pol_middle_index + 1)))
-
-
-# plot_geometry(geo_ctx=geometryctx, instrument=instrumentctx)
-
-# plot_distance_fd_as(geo_ctx=geometryctx)
-
-# plot_analyser_comparison(points_analyser_x=geometryctx.analyser_ellipse_points[0],
-#                          points_analyser_y=geometryctx.analyser_ellipse_points[1],
-#                          points_x=geometryctx.analyser_points[0], points_y=geometryctx.analyser_points[1])
-
-
-# all_dqx_m, all_dqy_m, all_dqz_m = resolution_calculation(geo_ctx=geometryctx, instrument=instrumentctx)
-# plot_resolution_kf(geo_ctx=geometryctx, all_dqx_m=all_dqx_m, all_dqy_m=all_dqy_m, all_dqz_m=all_dqz_m)
-# plot_resolution_polarangles(geo_ctx=geometryctx, polar_angles=polar_angles, all_dqx_m=all_dqx_m, all_dqy_m=all_dqy_m,
-#                             all_dqz_m=all_dqz_m, all_kf=all_kf)
-#
-# write_mcstas(geo_ctx=geometryctx, instrument=instrumentctx)
-
-# wavenumbers_psd(geo_ctx=geometryctx)
-
-
-# all_qx = np.array(list(map(lambda j: np.array(list(
-#     map(lambda i: geometryctx.vector_transfer(index_pol=i, index_azi=j)[0], range(geometryctx.wavenumbers.shape[0])))),
-#                            range(geometryctx.azi_angles.shape[0]))))*1e-10
-# all_qy = np.array(list(map(lambda j: np.array(list(
-#     map(lambda i: geometryctx.vector_transfer(index_pol=i, index_azi=j)[1], range(geometryctx.wavenumbers.shape[0])))),
-#                            range(geometryctx.azi_angles.shape[0]))))*1e-10
-# all_qz = np.array(list(map(lambda j: np.array(list(
-#     map(lambda i: geometryctx.vector_transfer(index_pol=i, index_azi=j)[2], range(geometryctx.wavenumbers.shape[0])))),
-#                            range(geometryctx.azi_angles.shape[0]))))*1e-10
 
 
 def magnon_scattered(scattering_de, magnon_de, de_of_e):
@@ -467,29 +429,13 @@ def magnon_scattered(scattering_de, magnon_de, de_of_e):
 
 
 def wavevector_transfer_rotation(rot_angle, wavevector_transfer):
-    new_qx, new_qy = rotation_around_z(rot_angle=rot_angle, old_x=wavevector_transfer[0], old_y=wavevector_transfer[1])
+    new_qx, new_qy = geo.rotation_around_z(rot_angle=rot_angle, old_x=wavevector_transfer[0],
+                                           old_y=wavevector_transfer[1])
     wavevector_transfer[:2] = new_qx, new_qy
     return wavevector_transfer
 
 
-def plot_range_qxqy(qx, qy, rot_step, rot_number):
-    qx_min, qx_max, qy_min, qy_max = None, None, None, None
-    for i in range(rot_number):
-        qx, qy = rotation_around_z(rot_angle=rot_step, old_x=qx, old_y=qy)
-        if i == 0:
-            qx_min, qx_max = np.min(qx), np.max(qx)
-            qy_min, qy_max = np.min(qy), np.max(qy)
-        else:
-            qx_min = min(qx_min, np.min(qx))
-            qy_min = min(qy_min, np.min(qy))
-            qx_max = max(qx_max, np.max(qx))
-            qy_max = max(qy_max, np.max(qy))
-    plot_qx = np.linspace(qx_min, qx_max, num=1000)
-    plot_qy = np.linspace(qy_min, qy_max, num=1000)
-    return plot_qx, plot_qy
-
-
-def mushroom_wavevector_transfer(geo_ctx: GeometryContext):
+def mushroom_wavevector_transfer(geo_ctx: MushroomContext):
     mushroom_qx = np.array(list(map(lambda i: np.array(list(
         map(lambda j: geo_ctx.wavevector_transfer(index_pol=i, index_azi=j)[0], range(geo_ctx.azi_angles.shape[0])))),
                                     range(geo_ctx.pol_angles.shape[0]))))
@@ -502,16 +448,16 @@ def mushroom_wavevector_transfer(geo_ctx: GeometryContext):
     return mushroom_qx, mushroom_qy, mushroom_qz
 
 
-def mushroom_energy_transfer(geo_ctx: GeometryContext):
+def mushroom_energy_transfer(geo_ctx: MushroomContext):
     return np.array(list(map(lambda i: np.array(list(map(
-        lambda j: PLANCKS_CONSTANT ** 2 * (geo_ctx.wavenumber_in ** 2 - geo_ctx.wavenumbers_out[i] ** 2) / (
-                2 * MASS_NEUTRON), range(geo_ctx.azi_angles.shape[0])))), range(geo_ctx.pol_angles.shape[0]))))
+        lambda j: neutron.planck_constant ** 2 * (geo_ctx.wavenumber_in ** 2 - geo_ctx.wavenumbers_out[i] ** 2) / (
+                2 * neutron.mass_neutron), range(geo_ctx.azi_angles.shape[0])))), range(geo_ctx.pol_angles.shape[0]))))
 
 
-def mushroom_magnon_crosssection(geo_ctx: GeometryContext):
+def mushroom_magnon_crosssection(geo_ctx: MushroomContext):
     ki_vector = np.array([geo_ctx.wavenumber_in, 0, 0])
     return np.array(list(map(lambda i: np.array(list(map(lambda j: magnonmdl.scatt_cross_kikf(ki_vector=ki_vector,
-                                                                                              kf_vector=wavenumber_vector(
+                                                                                              kf_vector=neutron.wavenumber2wavevector(
                                                                                                   wavenumber=
                                                                                                   geo_ctx.wavenumbers_out[
                                                                                                       i],
@@ -524,13 +470,13 @@ def mushroom_magnon_crosssection(geo_ctx: GeometryContext):
                              range(geo_ctx.pol_angles.shape[0]))))
 
 
-def dispersion_calc_plot(geo_ctx: GeometryContext, instrument: InstrumentContext, term, extension):
+def dispersion_calc_plot(geo_ctx: MushroomContext, term, extension):
     data_qx, data_qy, data_qz = mushroom_wavevector_transfer(geo_ctx=geo_ctx)
     data_qx = data_qx.flatten()
     data_qy = data_qy.flatten()
     data_qz = data_qz.flatten()
 
-    def energy_transfer(geo_ctx: GeometryContext, instrument: InstrumentContext, term, data_qx, data_qy, data_qz):
+    def energy_transfer(geo_ctx: MushroomContext, term, data_qx, data_qy, data_qz):
         if term == TERM_MAGNON:
             magnon_hw = np.array(list(map(lambda i: magnonmdl.magnon_energy(
                 wavevector_transfer=np.array([data_qx[i], data_qy[i], data_qz[i]])), range(data_qx.shape[0]))))
@@ -543,7 +489,7 @@ def dispersion_calc_plot(geo_ctx: GeometryContext, instrument: InstrumentContext
                 wavevector_transfer=np.array([data_qx[i], data_qy[i], data_qz[i]])), range(data_qx.shape[0]))))
             data_hw = mushroom_energy_transfer(geo_ctx=geo_ctx)
             rela_uncer_hw = np.array(list(map(lambda i: np.array(list(map(
-                lambda j: de_of_e_from_an(geo_ctx=geo_ctx, instrument=instrument, an_ind_now=i,
+                lambda j: de_of_e_from_an(geo_ctx=geo_ctx, an_ind_now=i,
                                           an_ind_near=1 if i == 0 else i - 1), range(data_hw.shape[1])))),
                                               range(data_hw.shape[0]))))
             data_hw, rela_uncer_hw = data_hw.flatten(), rela_uncer_hw.flatten()
@@ -557,10 +503,10 @@ def dispersion_calc_plot(geo_ctx: GeometryContext, instrument: InstrumentContext
     qx_now, qy_now = data_qx, data_qy
     if ROTATION_NUMBER > 0:
         for r in range(1, ROTATION_NUMBER + 1):
-            qx_now, qy_now = rotation_around_z(rot_angle=ROTATION_STEP, old_x=qx_now, old_y=qy_now)
+            qx_now, qy_now = geo.rotation_around_z(rot_angle=ROTATION_STEP, old_x=qx_now, old_y=qy_now)
             data_qx = np.append(data_qx, qx_now)
             data_qy = np.append(data_qy, qy_now)
-    de = energy_transfer(geo_ctx=geo_ctx, instrument=instrument, term=term, data_qx=data_qx, data_qy=data_qy,
+    de = energy_transfer(geo_ctx=geo_ctx, term=term, data_qx=data_qx, data_qy=data_qy,
                          data_qz=data_qz)
 
     # TODO: define the unit transformer for Q-vectors and energies
@@ -571,22 +517,24 @@ def dispersion_calc_plot(geo_ctx: GeometryContext, instrument: InstrumentContext
                 for r in range(1, ROTATION_NUMBER + 1):
                     data_qz = np.append(data_qz, qz_now)
             fig, ax = plt.subplots()
-            cnt_crosssection = ax.scatter(np.linalg.norm([data_qx, data_qy, data_qz], axis=0) * 1e-10,
-                                          de * 1e3 / CONVERSION_JOULE_PER_EV, c=de * 1e3 / CONVERSION_JOULE_PER_EV,
-                                          marker=".")
+            ax.scatter(np.linalg.norm([data_qx, data_qy, data_qz], axis=0) * 1e-10,
+                       de * 1e3 / neutron.conversion_joule_per_ev, c=de * 1e3 / neutron.conversion_joule_per_ev,
+                       marker=".")
             ax.set_xlabel(r"$|\vec{Q}|=|\vec{k}_{i}-\vec{k}_{f}|$ ($\AA^{-1}$)")
             ax.set_ylabel(r"$\hbar\omega=E_{i}-E_{f}$ (meV)")
         else:
             if dim == DIM_2:
                 fig, ax = plt.subplots()
                 plt.axis("equal")
-                cnt_crosssection = ax.scatter(data_qx * 1e-10, data_qy * 1e-10, c=de * 1e3 / CONVERSION_JOULE_PER_EV,
+                cnt_crosssection = ax.scatter(data_qx * 1e-10, data_qy * 1e-10,
+                                              c=de * 1e3 / neutron.conversion_joule_per_ev,
                                               marker=".")
             elif dim == DIM_3:
                 fig = plt.figure()
                 ax = fig.add_subplot(111, projection='3d')
-                cnt_crosssection = ax.scatter(data_qx * 1e-10, data_qy * 1e-10, de * 1e3 / CONVERSION_JOULE_PER_EV,
-                                              c=de * 1e3 / CONVERSION_JOULE_PER_EV, marker=".")
+                cnt_crosssection = ax.scatter(data_qx * 1e-10, data_qy * 1e-10,
+                                              de * 1e3 / neutron.conversion_joule_per_ev,
+                                              c=de * 1e3 / neutron.conversion_joule_per_ev, marker=".")
                 ax.tick_params(axis="z", direction="in")
             else:
                 raise ValueError("The given dimension is invalid for plotting.")
@@ -606,6 +554,27 @@ def dispersion_calc_plot(geo_ctx: GeometryContext, instrument: InstrumentContext
         plt.close(fig)
 
 
+geometryctx = MushroomContext()
+# magnonmdl = MagnonModel()
+magnonmdl = MagnonModel(latt_const=2.859e-10,
+                        stiff_const=266 * 1e-3 * neutron.conversion_joule_per_ev * 1e-20)  # parameters for bcc-Fe
+
+print("The index of the middle segment of the polar angle range: {:d}".format(int(geometryctx.pol_middle_index + 1)))
+
+plot_geometry(geo_ctx=geometryctx)
+
+plot_distance_fd_as(geo_ctx=geometryctx)
+
+plot_analyser_comparison(geo_ctx=geometryctx)
+
+plot_resolution_kf(geo_ctx=geometryctx)
+
+plot_resolution_polarangles(geo_ctx=geometryctx)
+
+write_mcstas(geo_ctx=geometryctx)
+
+wavenumbers_psd(geo_ctx=geometryctx)
+
 for ROTATION_NUMBER in ROTATION_NUMBERS:
     for term in CALC_TERMS:
-        dispersion_calc_plot(geometryctx, instrumentctx, term=term, extension=EXTENSION_PNG)
+        dispersion_calc_plot(geo_ctx=geometryctx, term=term, extension=EXTENSION_PNG)

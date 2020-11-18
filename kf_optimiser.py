@@ -1,6 +1,6 @@
 import numpy as np
 from helper import points_distance, InstrumentContext, angle_vectors, points_to_line, lines_intersect
-from geometry_context import GeometryContext
+from geometry_context import MushroomContext
 import matplotlib.pyplot as plt
 
 KYRO_RADIUS = 0.25  # m, radius of the gap reserved for the cyrostat

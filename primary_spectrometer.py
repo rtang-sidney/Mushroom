@@ -1,8 +1,9 @@
 import matplotlib.pyplot as plt
 import numpy as np
-from helper import InstrumentContext, NeutronContext, angle_triangle
-from neutron_scattering import wavenumber_2theta_bragg
-from geometry_context import MushroomContext
+import neutron_context as neutron
+import instrument_context as instr
+import geometry_calculation as geo
+from mushroom_context import MushroomContext
 
 ZERO_TOL = 1e-6
 ENERGY_SELECTION_MONOCHROMATOR = "Monochromator"
@@ -28,55 +29,55 @@ def get_filename(energy_selection_type):
         raise RuntimeError("Invalid type of the energy selection variable given.")
 
 
-def get_resolution_monochromator(instrument: InstrumentContext, ki):
+def get_resolution_monochromator(ki):
     """
     calculates the resolution of the primary spectrometer with a monochromator
-    :param instrument: InstrumentContext
+    :param 
     :param ki: incoming wave number
     :return: deviations of the components in the sequence of dki (wave number), dtheta (azimuthal angle), dphi (polar
     angle)
     """
 
-    def divergence_mono(instrument: InstrumentContext, axis):
+    def divergence_mono(axis):
         # distance_ms: monochromator-sample distance
-        divergence_in = instrument.divergence_initial
+        divergence_in = instr.divergence_initial
         if axis == AXIS_AZIMUTHAL:
-            divergence_out = angle_triangle(a=instrument.distance_ms, c=instrument.sample_diameter)
+            divergence_out = geo.angle_triangle(a=instr.distance_ms, c=instr.sample_diameter)
         elif axis == AXIS_POLAR:
-            divergence_out = angle_triangle(a=instrument.distance_ms, c=instrument.sample_height)
+            divergence_out = geo.angle_triangle(a=instr.distance_ms, c=instr.sample_height)
         else:
             raise RuntimeError("Invalid axis given.")
         return divergence_in, divergence_out
 
-    def angular_spread_monochromator(instrument: InstrumentContext, axis):
-        eta = instrument.moasic_analyser  # mosaic
-        alpha_i, alpha_f = divergence_mono(instrument=instrument, axis=axis)  # incoming and outgoing divergence
+    def angular_spread_monochromator(axis):
+        eta = instr.moasic_analyser  # mosaic
+        alpha_i, alpha_f = divergence_mono(axis=axis)  # incoming and outgoing divergence
         numerator = alpha_i ** 2 * alpha_f ** 2 + eta ** 2 * alpha_i ** 2 + eta ** 2 * alpha_f ** 2
         denominator = 4 * eta ** 2 + alpha_i ** 2 + alpha_f ** 2
         return np.sqrt(numerator / denominator)
 
-    def monochromator_twotheta(instrument: InstrumentContext, ki):
-        return wavenumber_2theta_bragg(wave_number=ki, instrument=instrument)
+    def monochromator_twotheta(ki):
+        return neutron.bragg_wavenumber2angle(wavenumber=ki, lattice_distance=instr.lattice_distance_pg002)
 
-    def get_uncertainty_ki(instrument: InstrumentContext, ki):
+    def get_uncertainty_ki(ki):
         # gives the deviation of the wave-number by means of the Bragg's law
-        dtheta_mono = angular_spread_monochromator(instrument=instrument, axis=AXIS_AZIMUTHAL)
-        twotheta_mono = monochromator_twotheta(instrument=instrument, ki=ki)
-        dki_bragg = ki * np.linalg.norm([instrument.deltad_d, dtheta_mono / np.tan(twotheta_mono / 2.0)])
+        dtheta_mono = angular_spread_monochromator(axis=AXIS_AZIMUTHAL)
+        twotheta_mono = monochromator_twotheta(ki=ki)
+        dki_bragg = ki * np.linalg.norm([instr.deltad_d, dtheta_mono / np.tan(twotheta_mono / 2.0)])
         # print(dtheta_mono, np.rad2deg(twotheta_mono), ki * 1e-10, dki_bragg * 1e-10)
         return abs(dki_bragg)
 
-    def get_spread_polar(instrument: InstrumentContext):
+    def get_spread_polar():
         # the spread of the polar angle is given simply by the divergence in both directions since there is no scattering
         # angles to be taken into consideration in this direction
-        return min(np.deg2rad(1.6), angle_triangle(instrument.distance_ms, instrument.sample_height))
+        return min(np.deg2rad(1.6), geo.angle_triangle(instr.distance_ms, instr.sample_height))
 
-    def get_spread_azimuthal(instrument: InstrumentContext):
-        return min(np.deg2rad(1.6), angular_spread_monochromator(instrument=instrument, axis=AXIS_AZIMUTHAL))
+    def get_spread_azimuthal():
+        return min(np.deg2rad(1.6), angular_spread_monochromator(axis=AXIS_AZIMUTHAL))
 
-    dki = get_uncertainty_ki(instrument=instrument, ki=ki)
-    dtheta = get_spread_azimuthal(instrument=instrument)
-    dphi = get_spread_polar(instrument=instrument)
+    dki = get_uncertainty_ki(ki=ki)
+    dtheta = get_spread_azimuthal()
+    dphi = get_spread_polar()
     return dki, dtheta, dphi
 
 
@@ -123,26 +124,24 @@ def plot_resolution(ki, dqx, dqy, dqz, energy_selection):
     print("{:s} plotted.".format(filename))
 
 
-def get_resolution_velocityselector(instrument: InstrumentContext, ki):
+def get_resolution_velocityselector(ki):
     dk_k = 0.1
     dki = ki * dk_k
     dtheta = np.deg2rad(1.0)
-    dphi = instrument.divergence_initial
+    dphi = instr.divergence_initial
     return dki, dtheta, dphi
 
 
-instrumentctx = InstrumentContext()
-neutronctx = NeutronContext()
 # kf = GeometryContext(side="same").wavenumbers
 # wavelength_incoming = GeometryContext(side="same").wavenumbers * 1e-10  # m, wavelength
 wavenumber_incoming = MushroomContext().wavenumbers_out
 
-dki, dtheta, dphi = get_resolution_monochromator(instrument=instrumentctx, ki=wavenumber_incoming)
+dki, dtheta, dphi = get_resolution_monochromator(ki=wavenumber_incoming)
 dqx, dqy, dqz = get_resolution_components(ki=wavenumber_incoming, dki=dki, dtheta=dtheta, dphi=dphi)
 energy_selection = ENERGY_SELECTION_MONOCHROMATOR
 plot_resolution(ki=wavenumber_incoming, dqx=dqx, dqy=dqy, dqz=dqz, energy_selection=energy_selection)
 
-dki, dtheta, dphi = get_resolution_velocityselector(instrument=instrumentctx, ki=wavenumber_incoming)
+dki, dtheta, dphi = get_resolution_velocityselector(ki=wavenumber_incoming)
 dqx, dqy, dqz = get_resolution_components(ki=wavenumber_incoming, dki=dki, dtheta=dtheta, dphi=dphi)
 energy_selection = ENERGY_SELECTION_VELOCITY_SELECTOR
 plot_resolution(ki=wavenumber_incoming, dqx=dqx, dqy=dqy, dqz=dqz, energy_selection=energy_selection)

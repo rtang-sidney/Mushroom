@@ -44,3 +44,7 @@ def wavenumber2wavevector(wavenumber, azi_angle, pol_angle):
     return wavenumber * np.array(
         [np.cos(pol_angle) * np.cos(azi_angle), np.cos(pol_angle) * np.sin(azi_angle), np.sin(pol_angle)])
 
+
+def bragg_wavenumber2angle(wavenumber, lattice_distance, ordering=1):
+    # returns the scattering angle 2theta according to the Bragg's law 2 * d * sin(theta) = n * lambda
+    return 2.0 * np.arcsin(ordering * np.pi / (wavenumber * lattice_distance))

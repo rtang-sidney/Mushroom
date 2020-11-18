@@ -2,18 +2,18 @@ import numpy as np
 import matplotlib.pyplot as plt
 import re
 import sys
-import geometry_calculation as geo
 import neutron_context as neutron
-import instrument_context as instr
 from mushroom_context import MushroomContext
 
 np.set_printoptions(threshold=sys.maxsize, precision=2)
 
-FILE_PSD_CYL = "psd_cyl.dat"
-FILE_PSD_FLAT = "psd_flat.dat"
-FILE_PSD_VERTICAL = "psd_vertical.dat"
-FILE_L_FLAT = "l_flat.dat"
-FILE_L_VERTICAL = "l_vertical.dat"
+FLAT = "flat"
+VERTICAL = "vertical"
+CYLINDER = "cylinder"
+
+PSD_PREFIX = "psd"
+LAMBDA_DETECTOR_PREFIX = "l"
+DATAFILE_EXTENSION = "dat"
 
 FOLDER_DATE = "190820_VNight"
 PSDCYL_COMPONENT = "psdcyl_monitor_out"
@@ -51,17 +51,18 @@ PATTERN_XYLIMITS = re.compile(
     r"\s*([-+]?[0-9]*\.?[0-9]*)\s([-+]?[0-9]*\.?[0-9]*)\s([-+]?[0-9]*\.?[0-9]*)\s([-+]?[0-9]*\.?[0-9]*)")
 PATTERN_POSITION = re.compile(r"\s*([-+]?[0-9]*\.?[0-9]*)\s([-+]?[0-9]*\.?[0-9]*)\s([-+]?[0-9]*\.?[0-9]*)")
 PATTERN_PARAM = re.compile(r"\s*(\S*_?\S*)=([-+]?[0-9]*\.?[0-9]*)")
-PATTERN_LABEL = re.compile(r"\s*(\S*\s*\S*)\s*\[(\S*)\]")
+PATTERN_LABEL = re.compile(r"\s*(\S*\s*\S*)\s*\[(\S*)]")
 
 SCAN_FOLDER_PREFIX = "Angle"
 
 
 class PsdInformation:
-    def __init__(self, angle, file_psd):  # psd_type, psd_name,
+    def __init__(self, angle, psd_form):  # psd_type, psd_name,
+        mushroom = MushroomContext()
         self.scan_angle = angle
-        folder = self.angle_to_folder(angle=self.scan_angle)
-        filename = "/".join([folder, file_psd])
-        f = open(file=filename).readlines()
+        folder = angle_to_folder(angle=self.scan_angle)
+        filepath = detector_filepath(detector_type=PSD_PREFIX, detector_form=psd_form, folder=folder)
+        f = open(file=filepath).readlines()
         keys = []
         contents = []
         for line in f:
@@ -88,27 +89,11 @@ class PsdInformation:
                     contents.append(content)
 
         self.metadata_dict = dict(zip(keys, contents))
-        # print(self.metadata_dict)
-        # self.wavenumber_incoming = float(self.metadata_dict[WAVENUMBER_INCOMING]) * 1e10
-        # self.wavenumber_incoming = np.pi / (
-        #         instrumentctx.lattice_distance_pg002 * np.sin(np.deg2rad(31.675315000373345)))
         self.xsize, self.ysize = list(
             map(int, re.search(pattern=PATTERN_SIZE, string=self.metadata_dict[KEY_SIZE]).groups()))
         x_1d, y_1d = self._xy_axes()
-        # self.xx, self.yy = np.meshgrid(self.xaxis, self.yaxis)
-        intensities = np.loadtxt(fname=filename, comments=COMMENT_SYMBOL, max_rows=self.ysize)
-        self.x_1d, self.y_1d, self.intensities = self._psd_signal_adjust(x_1d, y_1d, intensities, geo_ctx=geometryctx)
-
-    def angle_to_folder(self, angle):
-        print(angle)
-        scanname = "".join([SCAN_FOLDER_PREFIX, str(int(round(angle)))])
-        folder = "/".join([FOLDER_DATE, scanname])
-        return folder
-
-    def rotation2d(self, x, y, angle):
-        new_x = x * np.cos(angle) - y * np.sin(angle)
-        new_y = x * np.sin(angle) + y * np.cos(angle)
-        return new_x, new_y
+        intensities = np.loadtxt(fname=filepath, comments=COMMENT_SYMBOL, max_rows=self.ysize)
+        self.x_1d, self.y_1d, self.intensities = self._psd_signal_adjust(x_1d, y_1d, intensities, geo_ctx=mushroom)
 
     def _xy_axes(self):
         xmin, xmax, ymin, ymax = list(
@@ -144,6 +129,18 @@ class PsdInformation:
         return x, y, intensity
 
 
+def angle_to_folder(angle):
+    scanname = "".join([SCAN_FOLDER_PREFIX, str(int(round(angle)))])
+    folder = "/".join([FOLDER_DATE, scanname])
+    return folder
+
+
+def detector_filepath(detector_type, detector_form, folder):
+    filename = ".".join(["_".join([detector_type, detector_form]), DATAFILE_EXTENSION])
+    filepath = "/".join([folder, filename])
+    return filepath
+
+
 def folder_name(instrument, day, month, year, hms):
     if isinstance(instrument, str) is False:
         raise RuntimeError("Invalid type of instrument name.")
@@ -172,43 +169,17 @@ def folder_name(instrument, day, month, year, hms):
         raise RuntimeError("Invalid length of the date parameters.")
 
 
-def position2dispersion(x, y, psd_comp, geo_ctx: MushroomContext):
+def position2dispersion(x, y, psd_type, geo_ctx: MushroomContext):
     ki = geo_ctx.wavenumber_in
-    # azi_1d = np.linspace(-np.pi, np.pi, num=361)
-    # azi_2d, pol_2d = np.meshgrid(azi_1d, geo_ctx.polar_angles)
-    # inten_new_2d = np.zeros_like(azi_2d)
-    # if psd_comp == PSDCYL_COMPONENT:
-    #     azi_1d_indices = np.searchsorted(azi_1d, x)
-    #     y_1d_indices = np.searchsorted(geo_ctx.dete_vert_y, y) + geo_ctx.dete_hori_x.shape[0]
-    #     azi_indices_2d, y_indices_2d = np.meshgrid(azi_1d_indices, y_1d_indices)
-    #     np.add.at(inten_new_2d, (y_indices_2d, azi_indices_2d), intensity_2d)
-    # elif psd_comp == PSD_COMPONENT:
-    #     x_2d, y_2d = np.meshgrid(x, y)
-    #     radii_2d = np.linalg.norm([x_2d, y_2d], axis=0)
-    #     intensity_2d = np.where(radii_2d > abs(geo_ctx.detector_line_vert[-1]), intensity_2d, 0)
-    #     radii_indices = geo_ctx.dete_hori_x.shape[0] - np.searchsorted(geo_ctx.dete_hori_x[::-1], radii_2d)
-    #
-    #     azi_indices = np.searchsorted(azi_1d, np.arctan2(y_2d, x_2d))
-    #     azi_indices = np.where(azi_indices < azi_1d.shape[0], azi_indices, azi_1d.shape[0] - 1)
-    #     np.add.at(inten_new_2d, (radii_indices, azi_indices), intensity_2d)
-    # elif psd_comp == PSDVERT_COMPONENT:
-    #     x_1d_indices = np.arange(x.shape[0])
-    #     y_1d_indices = np.searchsorted(geo_ctx.dete_vert_y, y) + geo_ctx.dete_hori_x.shape[0]
-    #     y_1d_indices = np.where(y_1d_indices < geo_ctx.polar_angles.shape[0], y_1d_indices,
-    #                             geo_ctx.polar_angles.shape[0] - 1)
-    #     x_indices_2d, y_indices_2d = np.meshgrid(x_1d_indices, y_1d_indices)
-    #     np.add.at(inten_new_2d, (y_indices_2d, x_indices_2d), intensity_2d)
-    # else:
-    #     raise RuntimeError("Cannot match the component {:s}.".format(psd_comp))
-    if psd_comp == PSD_COMPONENT:
+    if psd_type == FLAT:
         radius = np.linalg.norm([x, y])
         azimuthal = np.arctan2(y, x)
         index = geo_ctx.dete_hori_x.shape[0] - np.searchsorted(geo_ctx.dete_hori_x[::-1], radius)
-    elif psd_comp == PSDVERT_COMPONENT:
+    elif psd_type == VERTICAL:
         azimuthal = x
         index = np.searchsorted(geo_ctx.dete_vert_y, y) + geo_ctx.dete_hori_x.shape[0]
     else:
-        raise RuntimeError("Cannot match the component {:s}.".format(psd_comp))
+        raise RuntimeError("Cannot match the component {:s}.".format(psd_type))
     kf = geo_ctx.wavenumbers_out[index]
     polar = geo_ctx.pol_angles[index]
     kfx = kf * np.cos(polar) * np.cos(azimuthal)
@@ -217,38 +188,29 @@ def position2dispersion(x, y, psd_comp, geo_ctx: MushroomContext):
     qx = ki - kfx
     qy = -kfy
     qz = -kfz
-    # q_2d = np.linalg.norm([qx_2d, qy_2d, qz_2d], axis=0)
-    omega_joule = neutron.planck_constant ** 2 / (2.0 * neutron.mass_neutron) * (ki ** 2 - kf ** 2)
-    return kf, qx, qy, qz, omega_joule
+    hw = neutron.planck_constant ** 2 / (2.0 * neutron.mass_neutron) * (ki ** 2 - kf ** 2)
+    return kf, qx, qy, qz, hw
 
 
-def intensity_update(angle, intensities_flat, intensities_vertical):  # intensities_cyl
+def intensity_merge(angle, intensities_flat, intensities_vertical):  # intensities_cyl
     # intensities_cyl += PsdInformation(angle, FILE_PSD_CYL).intensities
-    intensities_flat += PsdInformation(angle, FILE_PSD_FLAT).intensities
-    intensities_vertical += PsdInformation(angle, FILE_PSD_VERTICAL).intensities
+    intensities_flat += PsdInformation(angle, FLAT).intensities
+    intensities_vertical += PsdInformation(angle, VERTICAL).intensities
     # return intensities_cyl, intensities_flat, intensities_vertical
     return intensities_flat, intensities_vertical
 
 
-def plot_ax_2d(fig, ax, x_2d, y_2d, z_2d, psd_comp, subplot_index=None):
-    if np.count_nonzero(z_2d) > 0:
-        cnt = ax.contourf(x_2d, y_2d, z_2d, levels=np.linspace(np.max(z_2d) / 10.0, np.max(z_2d), num=10),
-                          cmap="coolwarm")
+def scatter_plot_colour(fig, ax, data_x, data_y, data_z, psd_type):
+    if np.count_nonzero(data_z) > 0:
+        cnt = ax.scatter(data_x, data_y, c=data_z)
         fig.colorbar(cnt, ax=ax)
-    if psd_comp == PSDCYL_COMPONENT or psd_comp == PSDVERT_COMPONENT:
+    if psd_type == PSDCYL_COMPONENT or psd_type == PSDVERT_COMPONENT:
         xlabel = r"Azimuthal angle $\theta$ (deg)"
         ylabel = "Vertical position (m)"
-    elif psd_comp == PSD_COMPONENT:
-        if subplot_index == 0:
-            xlabel = "x position (m)"
-            ylabel = "y position (m)"
-            ax.set_title("Cartesian")
-        elif subplot_index == 1:
-            xlabel = "Angular position (deg)"
-            ylabel = "Radial position (m)"
-            ax.set_title("Radial")
-        else:
-            raise RuntimeError("Wrong index or no index for flat psd plot given.")
+    elif psd_type == PSD_COMPONENT:
+        xlabel = "x position (m)"
+        ylabel = "y position (m)"
+        ax.set_title("Cartesian")
     else:
         raise RuntimeError("Invalid type of PSD given.")
     ax.set_xlabel(xlabel)
@@ -256,142 +218,30 @@ def plot_ax_2d(fig, ax, x_2d, y_2d, z_2d, psd_comp, subplot_index=None):
     ax.grid()
 
 
-geometryctx = MushroomContext()
+def get_wavelength_signals(scan_angles, detector_form):
+    angle = scan_angles[0]
+    filepath = detector_filepath(detector_type=LAMBDA_DETECTOR_PREFIX, detector_form=detector_form,
+                                 folder=angle_to_folder(angle))
+    signals = np.loadtxt(fname=filepath, comments=COMMENT_SYMBOL)
+    wavelengths = signals[:, 0] * 1e-10
+    intentisities = signals[:, 1]
 
-ki = geometryctx.wavenumber_in * 1e-10
+    filepath = detector_filepath(detector_type=LAMBDA_DETECTOR_PREFIX, detector_form=detector_form,
+                                 folder=angle_to_folder(-angle))
+    signals = np.loadtxt(fname=filepath, comments=COMMENT_SYMBOL)
+    intentisities += signals[:, 1]
 
-scan_angles = np.linspace(start=5, stop=170, num=166)
-# Angles in the McStas scans, not necessarily the same as the azimuthal angles of the analyser
-
-angle = scan_angles[0]
-# psd_cyl = PsdInformation(angle, FILE_PSD_CYL)
-# azi_angles_cyl, y_positions_cyl, intensities_cyl, ki = psd_cyl.x_1d, psd_cyl.y_1d, psd_cyl.intensities, psd_cyl.wavenumber_incoming
-psd_flat = PsdInformation(angle, FILE_PSD_FLAT)
-x_pos_flat, y_pos_flat, intensities_flat = psd_flat.x_1d, psd_flat.y_1d, psd_flat.intensities
-psd_vertical = PsdInformation(angle, FILE_PSD_VERTICAL)
-x_pos_vertical, y_pos_vertical, intensities_vertical = psd_vertical.x_1d, psd_vertical.y_1d, psd_vertical.intensities
-
-intensities_flat, intensities_vertical = intensity_update(angle=-angle,
-                                                          intensities_flat=intensities_flat,
-                                                          intensities_vertical=intensities_vertical)
-
-for angle in scan_angles[1:]:
-    intensities_flat, intensities_vertical = intensity_update(angle=angle, intensities_flat=intensities_flat,
-                                                              intensities_vertical=intensities_vertical)
-    intensities_flat, intensities_vertical = intensity_update(angle=-angle, intensities_flat=intensities_flat,
-                                                              intensities_vertical=intensities_vertical)
-
-
-def psd_calc_plot(geo_ctx: MushroomContext, psd_type):
-    fig, ax = plt.subplots()
-    if psd_type == PSDVERT_COMPONENT:
-        plot_ax_2d(fig=fig, ax=ax, x_2d=np.rad2deg(x_pos_vertical), y_2d=y_pos_vertical, z_2d=intensities_vertical,
-                   psd_comp=PSDVERT_COMPONENT)
-        plt.title("Total intensities on vert. PSDs, ki={:5.3f}".format(ki * 1e-10))
-
-    plt.tight_layout()
-    plt.savefig("_".join([FOLDER_DATE, "Data_collection_{:s}.pdf".format(psd_type)]), bbox_inches='tight')
-    plt.close(fig)
-
-
-azi_flat_2d = np.rad2deg(np.arctan2(y_pos_flat, x_pos_flat))
-radi_flat_2d = np.linalg.norm([x_pos_flat, y_pos_flat], axis=0)
-xplot = [x_pos_flat, azi_flat_2d]
-yplot = [y_pos_flat, radi_flat_2d]
-fig, axs = plt.subplots(2, 1)
-for i in range(axs.ravel().shape[0]):
-    plot_ax_2d(fig=fig, ax=axs[i], x_2d=xplot[i], y_2d=yplot[i], z_2d=intensities_flat, psd_comp=PSD_COMPONENT,
-               subplot_index=i)
-plt.suptitle("Total intensities on flat PSDs, ki={:5.3f}".format(ki * 1e-10))
-plt.tight_layout(rect=[0, 0, 1, 0.95])
-plt.savefig("_".join([FOLDER_DATE, "Data_collection_flat.pdf"]))
-plt.close(fig)
-
-kf_vert, qx_vert, qy_vert, qz_vert, e_transfer_vert = np.array(list(map(
-    lambda i: position2dispersion(x=x_pos_vertical[i], y=y_pos_vertical[i], psd_comp=PSDVERT_COMPONENT,
-                                  geo_ctx=geometryctx), range(x_pos_vertical.shape[0]))))
-kf_flat, qx_flat, qy_flat, qz_flat, e_transfer_flat = np.array(list(map(
-    lambda i: position2dispersion(x=x_pos_flat[i], y=y_pos_flat[i], psd_comp=PSD_COMPONENT, geo_ctx=geometryctx),
-    range(x_pos_flat.shape[0]))))
-
-# range_kf = np.linspace(np.min(np.append(kf_vert, kf_flat)), np.max(np.append(kf_vert, kf_flat)), num=1000)
-range_qx = np.linspace(np.min(np.append(qx_vert, qx_flat)), np.max(np.append(qx_vert, qx_flat)), num=1000)
-range_qy = np.linspace(np.min(np.append(qy_vert, qy_flat)), np.max(np.append(qy_vert, qy_flat)), num=1000)
-range_qz = np.linspace(np.min(np.append(qz_vert, qz_flat)), np.max(np.append(qz_vert, qz_flat)), num=1000)
-range_de = np.linspace(np.min(np.append(e_transfer_vert, e_transfer_flat)),
-                       np.max(np.append(e_transfer_vert, e_transfer_flat)), num=1000)
-inten_qxde = dispersion_signal(range_x=range_qx, range_y=range_de, data_x=qx_vert, data_y=e_transfer_vert,
-                               intensity=intensities_vertical) + dispersion_signal(range_x=range_qx,
-                                                                                   range_y=range_de,
-                                                                                   data_x=qx_flat,
-                                                                                   data_y=e_transfer_flat,
-                                                                                   intensity=intensities_flat)
-inten_qyde = dispersion_signal(range_x=range_qy, range_y=range_de, data_x=qy_vert, data_y=e_transfer_vert,
-                               intensity=intensities_vertical) + dispersion_signal(range_x=range_qy,
-                                                                                   range_y=range_de,
-                                                                                   data_x=qy_flat,
-                                                                                   data_y=e_transfer_flat,
-                                                                                   intensity=intensities_flat)
-inten_qzde = dispersion_signal(range_x=range_qz, range_y=range_de, data_x=qz_vert, data_y=e_transfer_vert,
-                               intensity=intensities_vertical) + dispersion_signal(range_x=range_qz,
-                                                                                   range_y=range_de,
-                                                                                   data_x=qz_flat,
-                                                                                   data_y=e_transfer_flat,
-                                                                                   intensity=intensities_flat)
-
-# intensities_new_flat = \
-#     position2dispersion(x=x_pos_flat, y=y_pos_flat, intensity_2d=intensities_flat, psd_comp=PSD_COMPONENT,
-#                         geo_ctx=geometryctx)[-1]
-# intensities_total = intensities_new_vert + intensities_new_flat
-
-
-fig, axs = plt.subplots(1, 3, sharey="all")
-plot_x = [range_qx, range_qy, range_qz]
-plot_inte = [inten_qxde, inten_qyde, inten_qzde]
-for i in range(axs.ravel().shape[0]):
-    cnt = axs[i].contourf(plot_x[i] * 1e-10, range_de * 1e3 / CONVERSION_JOULE_PER_EV, plot_inte[i], cmap="coolwarm")
-    # cnt = ax.contourf(wavevector_transfer * 1e-10, energy_transfer * 1e3, intensities_total, cmap="coolwarm")
-    fig.colorbar(cnt, ax=axs[i])
-# ax.set_xlabel(r"$Q = k_i - k_f$ ($\AA^{-1}$)")
-# ax.set_ylabel(r"Energy transfer $\Delta E = E_{i}-E_{f}$ (meV)")
-# plt.title("Dispersion on PSDs, ki={:5.3f}".format(ki * 1e-10))
-# plt.grid()
-# plt.tight_layout()
-# plt.savefig("_".join([FOLDER_DATE, "Dispersion_total.pdf"]))
-# plt.close(fig)
-plt.show()
-
-
-def get_wavelength_signals(scan_angles, file):
-    if file in [FILE_L_VERTICAL, FILE_L_FLAT]:
-        angle = scan_angles[0]
-        scanname = "".join([SCAN_FOLDER_PREFIX, str(int(angle))])
-        folder = "/".join([FOLDER_DATE, scanname])
-        # signals = np.loadtxt(fname="/".join([folder, FILE_L_FLAT]), comments=COMMENT_SYMBOL)
-        signals = np.loadtxt(fname="/".join([folder, file]), comments=COMMENT_SYMBOL)
-        wavelengths = signals[:, 0] * 1e-10
-        intentisities = signals[:, 1]
-
-        scanname = "".join([SCAN_FOLDER_PREFIX, str(int(-angle))])
-        folder = "/".join([FOLDER_DATE, scanname])
-        # signals = np.loadtxt(fname="/".join([folder, FILE_L_FLAT]), comments=COMMENT_SYMBOL)
-        signals = np.loadtxt(fname="/".join([folder, file]), comments=COMMENT_SYMBOL)
+    for angle in scan_angles[1:]:
+        filepath = detector_filepath(detector_type=LAMBDA_DETECTOR_PREFIX, detector_form=detector_form,
+                                     folder=angle_to_folder(angle))
+        signals = np.loadtxt(fname=filepath, comments=COMMENT_SYMBOL)
         intentisities += signals[:, 1]
 
-        for angle in scan_angles[1:]:
-            scanname = "".join([SCAN_FOLDER_PREFIX, str(int(angle))])
-            folder = "/".join([FOLDER_DATE, scanname])
-            # signals = np.loadtxt(fname="/".join([folder, FILE_L_FLAT]), comments=COMMENT_SYMBOL)
-            signals = np.loadtxt(fname="/".join([folder, file]), comments=COMMENT_SYMBOL)
-            intentisities += signals[:, 1]
-            scanname = "".join([SCAN_FOLDER_PREFIX, str(int(-angle))])
-            folder = "/".join([FOLDER_DATE, scanname])
-            # signals = np.loadtxt(fname="/".join([folder, FILE_L_FLAT]), comments=COMMENT_SYMBOL)
-            signals = np.loadtxt(fname="/".join([folder, file]), comments=COMMENT_SYMBOL)
-            intentisities += signals[:, 1]
-        return wavelengths, intentisities
-    else:
-        raise RuntimeError("Invalid file of the l-monitor")
+        filepath = detector_filepath(detector_type=LAMBDA_DETECTOR_PREFIX, detector_form=detector_form,
+                                     folder=angle_to_folder(-angle))
+        signals = np.loadtxt(fname=filepath, comments=COMMENT_SYMBOL)
+        intentisities += signals[:, 1]
+    return wavelengths, intentisities
 
 
 def plot_kf_monitor(ax, kf, intensity, title):
@@ -412,21 +262,58 @@ def plot_kf_monitor(ax, kf, intensity, title):
     ax.set_title(title)
     ax.set_ylabel("Intensity")
 
-# wavelength_l, intensity_lvertical = get_wavelength_signals(scan_angles=scan_angles, file=FILE_L_VERTICAL)
-# intensity_lflat = get_wavelength_signals(scan_angles=scan_angles, file=FILE_L_FLAT)[-1]
-# wavenumber_l = 2.0 * np.pi / wavelength_l
-# intensity_l = intensity_lvertical + intensity_lflat
-#
-# fig, axs = plt.subplots(2, 1, sharex="all")
-# titles = ["lambda monitor", "psd"]
-# wavenumbers = [wavenumber_l, kf.flatten()]
-# intensities = [intensity_l, intensities_total.flatten()]
-# for i in range(axs.ravel().shape[0]):
-#     plot_kf_monitor(axs[i], wavenumbers[i], intensities[i], titles[i])
-# axs[-1].set_xlabel(r"$k_f$ ($\AA^{-1}$)")
-# fig.suptitle("Wavenumber distribution at ki={:5.3f}".format(ki * 1e-10))
-# plt.tight_layout(rect=[0, 0, 1, 0.95])
-# plt.savefig("_".join([FOLDER_DATE, "Wavenumber_distribution.pdf"]))
-# # plt.show()
-# plt.close(fig)
-# print("{} is finished.".format(FOLDER_DATE))
+
+def psd_data(mushroom: MushroomContext, scan_angles, psd_form):
+    angle = scan_angles[0]
+    psd = PsdInformation(angle=angle, psd_form=psd_form)
+    psd_x, psd_y, psd_intensity = psd.x_1d, psd.y_1d, psd.intensities
+    for angle in scan_angles[1:]:
+        psd_intensity += PsdInformation(angle, psd_form).intensities
+
+    fig, ax = plt.subplots()
+    scatter_plot_colour(fig=fig, ax=ax, data_x=psd_x, data_y=psd_y, data_z=psd_intensity, psd_type=PSD_COMPONENT)
+    plt.suptitle(r"Total intensity at {:s} PSD, ki={:5.3f} $\AA$".format(psd_form, mushroom.wavenumber_in * 1e-10))
+    plot_file = "_".join([FOLDER_DATE, "PSDCollection_{:s}.pdf".format(psd_form)])
+    plt.savefig(plot_file, bbox_inches='tight')
+    plt.close(fig)
+    print("Plot saved: {:s}".format(plot_file))
+    return psd_x, psd_y, psd_intensity
+
+
+def psd2dispersion(mushroom: MushroomContext, psd_form, psd_x, psd_y, psd_intensity):
+    kf, qx, qy, qz, e_transfer = np.array(list(map(
+        lambda i: position2dispersion(x=psd_x[i], y=psd_y[i], psd_type=psd_form,
+                                      geo_ctx=psd_intensity), range(psd_x.shape[0]))))
+
+    fig, ax = plt.subplots()
+    scatter_plot_colour(fig=fig, ax=ax, data_x=qx, data_y=qy, data_z=e_transfer, psd_type=PSD_COMPONENT)
+    plt.suptitle(r"Dispersion from {:s} PSD, ki={:5.3f} $\AA$".format(psd_form, mushroom.wavenumber_in * 1e-10))
+    plot_file = "_".join([FOLDER_DATE, "Dispersion_{:s}.pdf".format(psd_form)])
+    plt.savefig(plot_file, bbox_inches='tight')
+    plt.close(fig)
+    print("Plot saved: {:s}".format(plot_file))
+
+
+def wavenumber_plot(mushroom: MushroomContext, scan_angles, wavenumber_psd, intensity_psd):
+    wavelength_l, intensity_lvertical = get_wavelength_signals(scan_angles=scan_angles, detector_form=VERTICAL)
+    intensity_lflat = get_wavelength_signals(scan_angles=scan_angles, detector_form=VERTICAL)[-1]
+    wavenumber_l = 2.0 * np.pi / wavelength_l
+    intensity_l = intensity_lvertical + intensity_lflat
+
+    fig, axs = plt.subplots(2, 1, sharex="all")
+    titles = ["lambda monitor", "psd"]
+    wavenumbers = [wavenumber_l, wavenumber_psd.flatten()]
+    intensity_psd = [intensity_l, intensity_psd.flatten()]
+    for i in range(axs.ravel().shape[0]):
+        plot_kf_monitor(axs[i], wavenumbers[i], intensity_psd[i], titles[i])
+    axs[-1].set_xlabel(r"$k_f$ ($\AA^{-1}$)")
+    fig.suptitle("Wavenumber distribution at ki={:5.3f}".format(mushroom.wavenumber_in * 1e-10))
+    plot_file = "_".join([FOLDER_DATE, "Wavenumber_distribution.pdf"])
+    plt.savefig(plot_file, bbox_inches='tight')
+    plt.close(fig)
+    print("Plot saved: {:s}".format(plot_file))
+
+
+mushroomctx = MushroomContext()
+
+scan_angles = np.linspace(start=5, stop=170, num=166)

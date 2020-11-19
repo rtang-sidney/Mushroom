@@ -3,17 +3,20 @@ import instrument_context as instr
 import geometry_calculation as geo
 import neutron_context as neutron
 
-SOLAR_RANGE = np.deg2rad(60)  # the range of the solar angles covered by the analyser
-CRYO_RADIUS = 0.25  # m, reserving the space for a cryostat
 HEIGHT_INSTR = 3.0  # m, from the highest point of the analyser to the horizontal bank of PSD
 
 
 class MushroomContext(object):
+    # this was the parameters used for a place with a radius of 0.4 m
     # def __init__(self, angle_plus_deg=30, distance_sf=2.16, polar_focus_deg=-35.17, detector_height=2.49,
     #              wavenumber_in=1.5 * 1e10):
-    # this was the parameters used for the cyrostat radius of 0.8 m
 
-    def __init__(self, angle_plus_deg=30, distance_sf=2.03, polar_focus_deg=-33.98, detector_height=2.27,
+    # This was for the plus angle of 30 degree
+    # def __init__(self, angle_plus_deg=30, distance_sf=2.03, polar_focus_deg=-33.98, detector_height=2.27,
+    #              wavenumber_in=1.5 * 1e10):
+
+    # the following parameters are for a place with a radius of 0.25 m
+    def __init__(self, distance_sf=2.14, polar_focus_deg=-43.97, detector_height=2.97,
                  wavenumber_in=1.5 * 1e10):
         self.wavenumber_in = wavenumber_in  # m-1
         self.azi_nega = np.deg2rad(np.linspace(-170, -5, num=166))
@@ -24,12 +27,12 @@ class MushroomContext(object):
         self.foc_size = 1e-2  # m
         self.elli_points = 100  # number of points for the ideal ellipse
 
-        self.pol_plus = np.deg2rad(
-            angle_plus_deg)  # slope of the line from the sample to the upmost point on the analyser
-        self.pol_minus = self.pol_plus - SOLAR_RANGE
+        self.pol_plus = np.deg2rad(instr.angle_plus_deg)
+        # slope of the line from the sample to the upmost point on the analyser
+        self.pol_minus = self.pol_plus - np.deg2rad(instr.angle_range_deg)
         # slope of the line from the sample to the downmost point on the analyser
         self.pol_middle = (self.pol_plus + self.pol_minus) / 2.0
-        self.start_point = (CRYO_RADIUS, CRYO_RADIUS * np.tan(self.pol_plus))
+        self.start_point = (instr.cryo_radius, instr.cryo_radius * np.tan(self.pol_plus))
 
         self.detector_line_hori = [0.0, 1.0, detector_height]
         self.detector_line_vert = [1.0, 0.0, -0.4]  # [1, 0, -h]: h -> horizontal position (m) of the vertical bank
@@ -40,7 +43,7 @@ class MushroomContext(object):
         else:
             raise RuntimeError("Invalid polar angle of the other focus.")
 
-        self.filename_geo = "_".join(['Geometry', str(int(angle_plus_deg)), "{:.2f}".format(distance_sf)])
+        self.filename_geo = "_".join(['Geometry', str(int(instr.angle_plus_deg)), "{:.2f}".format(distance_sf)])
         self.filename_res = 'Resolution_Test'  # + detector_suffix
 
         self.an_seg_size = 1e-2  # m
@@ -60,7 +63,7 @@ class MushroomContext(object):
         self.dete_hori_x, self.dete_vert_y = self._detector_from_analyser()[2:]
         # print(self.dete_hori_x, '\n\n', self.dete_vert_y)
 
-        self.filename_mcstas = 'Analyser_New.dat'
+        self.filename_mcstas = 'Analyser_{:.2f}.dat'.format(instr.cryo_radius)
         self.arm_sa_name_prefix = "arm_sa_an"
         self.arm_sa_reference = "arm_sample_orientation"
         self.component_name_prefix = "graphite_analyser"

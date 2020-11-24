@@ -11,17 +11,19 @@ np.set_printoptions(threshold=sys.maxsize, precision=2)
 # TODO: perhaps one should rewrite it as a class so that one still can change all the parameters externally
 
 class MagnonModel:
-    def __init__(self, latt_const=4.5 * 1e-10, spin_coupling=neutron.mev2joule(0.3), spin=1, temperature=300,
-                 stiff_const=None):
+    def __init__(self, model_name, latt_const, spin=1, temperature=300, spin_coupling=None, stiff_const=None):
+        self.name = model_name
         self.l_const = latt_const
-        self.spin_coup = spin_coupling
         self.spin = spin
         self.temp = temperature
-        if stiff_const:
-            self.stiff_const = stiff_const
+        if spin_coupling:
+            self.spin_coup = spin_coupling
+        elif stiff_const:
+            self.spin_coup = stiff_const / (self.spin * self.l_const ** 2)
         else:
-            self.stiff_const = 2 * self.spin_coup * self.spin * self.l_const ** 2
+            raise ValueError("Either spin coupling or stiff constant must be given.")
 
+    # not used
     def if_scattered(self, ki_vector, kf_vector):
         """
         gives back whether the scattering event is allowed or not
@@ -42,6 +44,7 @@ class MagnonModel:
         else:
             return 0
 
+    # not used
     @staticmethod
     def qyqz_to_kf(geo_ctx: MushroomContext, de, qy, qz, acute=True):
         ki = geo_ctx.wavenumber_in
@@ -77,8 +80,11 @@ class MagnonModel:
         hkl = np.round(wavevector_transfer / reci_const)
         # print(scattering_vector, reci_const, hkl)
         magnon_vector = wavevector_transfer - hkl * reci_const
-        return self.stiff_const * np.linalg.norm(magnon_vector) ** 2
+        return 2 * self.spin_coup * self.spin * (
+                3 - np.cos(magnon_vector[0] * self.l_const) - np.cos(magnon_vector[1] * self.l_const) - np.cos(
+            magnon_vector[2] * self.l_const))
 
+    # not used
     def scatt_cross_qxqyde(self, qq_x, qq_y, hw, ki, resol=0.01, qq_z=None, kf=None, mushroom=False):
         if mushroom is True:  # the (Qx,Qy,Qz)-values must satisfy those available in Mushroom
             if abs((hw - (ki ** 2 - kf ** 2) * neutron.planck_constant ** 2 / (2 * neutron.mass_neutron)) / hw) > resol:
@@ -107,6 +113,7 @@ class MagnonModel:
         neutrons_gain_energy = geo.dirac_delta_approx(hw, -magnon_hw, resol) * n_q
         return neutrons_lose_energy + neutrons_gain_energy  # prefactor * debye_waller *
 
+    # not used
     def scatt_cross_kikf(self, ki_vector, kf_vector, resol=0.01):
         # it gives a symmetric pattern iff the ki lays on one reciprocal lattice point
         ki, kf = np.linalg.norm(ki_vector), np.linalg.norm(kf_vector)

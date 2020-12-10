@@ -103,19 +103,19 @@ def get_resolution_components(ki, dki, dtheta, dphi):
 def plot_resolution(ki, dqx, dqy, dqz, energy_selection):
     filename = get_filename(energy_selection_type=energy_selection)
     fig, ax = plt.subplots()
-    ax.plot(ki * 1e-10, dqx * 1e-10, color="blue")
-    ax.plot(ki * 1e-10, dqy * 1e-10, color="red")
-    ax.plot(ki * 1e-10, dqz * 1e-10, color="gold")
+    ax.plot(ki * 1e-10, dqx * 1e-10, color="blue", label="x: horizontal")
+    ax.plot(ki * 1e-10, dqy * 1e-10, color="red", label="y: vertical")
+    ax.plot(ki * 1e-10, dqz * 1e-10, color="darkgoldenrod", label="z: along $k_i$")
 
     ax.tick_params(axis="both", direction="in")
-    ax.legend(("x: horizontal", "y: vertical", r"z: along $k_i$"))
+    ax.legend(labelcolor=["blue", "red", "darkgoldenrod"], loc='upper left', bbox_to_anchor=(0, 1), framealpha=0.5)
     ax.set_xlabel(r"Wavenumber $k_i$ ($\AA^{-1}$)")
     ax.set_ylabel(r"Uncertainty $\Delta k_{i,\alpha}$ ($\AA^{-1}$), $\alpha=x,y,z$")
     ax.grid()
     ax.set_title("Primary spectrometer")  # with {}.format(energy_selection))
     ax2 = ax.twinx()  # instantiate a second axes that shares the same x-axis
     colour_ax2 = "green"
-    ax2.plot(ki * 1e-10, dqz / ki * 1e2, '1', color=colour_ax2)
+    ax2.plot(ki * 1e-10, dqz / ki * 1e2, color=colour_ax2)
     ax2.legend(["Relative uncertainty"], loc='lower left', bbox_to_anchor=(0, 0.5), labelcolor=colour_ax2,
                framealpha=0.5)
     ax2.tick_params(axis="y", direction="in")
@@ -146,9 +146,9 @@ uncertain_qx, uncertain_qy, uncertain_qz = get_resolution_components(ki=wavenumb
 plot_resolution(ki=wavenumber_in, dqx=uncertain_qx, dqy=uncertain_qy, dqz=uncertain_qz,
                 energy_selection=ENERGY_CUT_MONOCHROMATOR)
 
-# uncertain_ki, uncertain_theta, uncertain_phi = resolution_v_selector(ki=wavenumber_in)
-# uncertain_qx, uncertain_qy, uncertain_qz = get_resolution_components(ki=wavenumber_in, dki=uncertain_ki,
-#                                                                      dtheta=uncertain_theta,
-#                                                                      dphi=uncertain_phi)
-# plot_resolution(ki=wavenumber_in, dqx=uncertain_qx, dqy=uncertain_qy, dqz=uncertain_qz,
-#                 energy_selection=ENERGY_CUT_VELOCITY_SELECTOR)
+uncertain_ki, uncertain_theta, uncertain_phi = resolution_v_selector(ki=wavenumber_in)
+uncertain_qx, uncertain_qy, uncertain_qz = get_resolution_components(ki=wavenumber_in, dki=uncertain_ki,
+                                                                     dtheta=uncertain_theta,
+                                                                     dphi=uncertain_phi)
+plot_resolution(ki=wavenumber_in, dqx=uncertain_qx, dqy=uncertain_qy, dqz=uncertain_qz,
+                energy_selection=ENERGY_CUT_VELOCITY_SELECTOR)

@@ -84,6 +84,7 @@ class MagnonModel:
                 3 - np.cos(magnon_vector[0] * self.l_const) - np.cos(magnon_vector[1] * self.l_const) - np.cos(
             magnon_vector[2] * self.l_const))
 
+
     # not used
     def scatt_cross_qxqyde(self, qq_x, qq_y, hw, ki, resol=0.01, qq_z=None, kf=None, mushroom=False):
         if mushroom is True:  # the (Qx,Qy,Qz)-values must satisfy those available in Mushroom

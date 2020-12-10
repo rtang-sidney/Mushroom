@@ -4,7 +4,6 @@ import geometry_calculation as geo
 import neutron_context as neutron
 
 HEIGHT_INSTR = 3.0  # m, from the highest point of the analyser to the horizontal bank of PSD
-WAVENUMBER_IN = 1.4e10
 
 
 class MushroomContext(object):
@@ -17,8 +16,8 @@ class MushroomContext(object):
     #              wavenumber_in=1.5 * 1e10):
 
     # the following parameters are for a place with a radius of 0.25 m
-    def __init__(self, distance_sf=2.14, polar_focus_deg=-43.97, detector_height=2.97):
-        self.wavenumber_in = WAVENUMBER_IN  # m-1
+    def __init__(self, wavenumber_in=1.4e10, distance_sf=2.14, polar_focus_deg=-43.97, detector_height=2.97):
+        self.wavenumber_in = wavenumber_in  # m-1
         self.azi_nega = np.deg2rad(np.linspace(-170, -5, num=166))
         self.azi_posi = np.deg2rad(np.linspace(5, 170, num=166))
         self.azi_angles = np.append(self.azi_nega, self.azi_posi)

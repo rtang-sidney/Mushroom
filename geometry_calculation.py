@@ -57,7 +57,11 @@ def points_to_line(point1, point2):
 
 def points_to_vector(point1, point2):
     # gives the vector pointing from the point1 to point2 (direction important)
-    return np.array([point2[0] - point1[0], point2[1] - point1[1]])
+    if isinstance(point1, np.ndarray) is False:
+        point1 = np.array(point1)
+    if isinstance(point2, np.ndarray) is False:
+        point2 = np.array(point2)
+    return point2 - point1
 
 
 def parameters_to_line(slope, y_intersect=None):
@@ -160,3 +164,14 @@ def dirac_delta_approx(x, x0, resol):
     """
     a = resol * x0
     return np.exp(-((x - x0) / a) ** 2) / (abs(a) * np.sqrt(np.pi))
+
+
+def point2line_3d(point_out, line_direction, point_on):
+    point_vector = points_to_vector(point_out, point_on)
+    return np.linalg.norm(np.cross(point_vector, line_direction)) / np.linalg.norm(line_direction)
+
+
+def rotation_3d(vector, rot_axis, angle):
+    return rot_axis * np.dot(rot_axis, vector) + np.cos(angle) * np.cross(np.cross(rot_axis, vector),
+                                                                          rot_axis) + np.sin(
+        angle) * np.cross(rot_axis, vector)

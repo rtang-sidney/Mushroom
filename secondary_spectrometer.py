@@ -21,32 +21,71 @@ TERM_SCATTERING = "scattering"  # energy conservation at the scattering
 TERM_CROSS_SECTION = "cross_section"  # Delta function is approximated by Gaussian function with intensity distribution
 TERM_MUSHROOM = "Mushroom"
 TERM_MUSHROOM_MAGNON = "MushroomMagnon"
-CALC_TERMS = [TERM_MUSHROOM, TERM_MAGNON, TERM_MUSHROOM_MAGNON]  # TERM_MUSHROOM, TERM_MAGNON, TERM_MUSHROOM_MAGNON
+CALC_TERMS = [TERM_MUSHROOM_MAGNON]  # TERM_MUSHROOM, TERM_MAGNON, TERM_MUSHROOM_MAGNON
 
 AXIS_X = "x"
 AXIS_Y = "y"
 AXIS_Z = "z"
 AXES = [AXIS_X, AXIS_Y, AXIS_Z]
+NORM = "norm"
 
 ROTATION_STEP = np.deg2rad(1)  # sample rotation step size
-ROTATION_NUMBERS = [30]  # number of steps, 0, 10, 30, 90
-
-DIM_1 = "1d"
+ROTATION_NUMBERS = [10, 30]  # number of steps, 0, 10, 30, 90, 180
+DIM_1 = "norm"
+DIM_LINE = "line"
 DIM_2 = "2d"
+DIM_PLANE = "plane"
 DIM_3 = "3d"
 DIM_4 = "4d"
-DIMENSIONS = [DIM_4]  # DIM_1, DIM_2, DIM_3
+DIM_PROJ = [DIM_1, DIM_2, DIM_3, DIM_4]
+DIM_INTERSECT = [DIM_LINE, DIM_PLANE]
+DIMENSIONS = [DIM_LINE]  # DIM_1, DIM_2, DIM_3,DIM_4, DIM_1_LINE, DIM_2_HW
 
 EXTENSION_PDF = "pdf"
 EXTENSION_PNG = "png"
 
-MAGNON_MCSTAS = "McStas"
+MAGNON_DEFAULT = "Default"
 MAGNON_IRON = "Fe"  # Fe BCC
 
 Q_UNIT_REAL = r"$\AA^{-1}$"  # the real unit of Q-vector
 Q_UNIT_RLU = "r.l.u."  # reciprocal lattice unit
+HW_LABEL = r"$\hbar\omega$ (meV)"
 
-GRID_NUM = 100
+SAMPLE_INIT_ROT = np.array([1, 0, 0])
+# SAMPLE_TILT_AXIS1 = np.array([0, 1, 0])
+# SAMPLE_TILT_ANGLES = [90]
+# SAMPLE_TILT_ANGLE2 = np.deg2rad(0)
+# POINTS_INTEREST = [np.array([1, 0, 0]), np.array([0, 1, 0]), np.array([0, 0, 1])]
+POINTS_INTEREST = [np.array([0, 0, 0])]
+
+HKL_100_NAME = "100"
+HKL_010_NAME = "010"
+HKL_001_NAME = "001"
+HKL_110_NAME = "110"
+HKL_101_NAME = "101"
+HKL_011_NAME = "011"
+HKL_111_NAME = "111"
+HKL_211_NAME = "211"
+HKL_121_NAME = "121"
+HKL_221_NAME = "221"
+HKL_100 = np.array([1, 0, 0])
+HKL_010 = np.array([0, 1, 0])
+HKL_001 = np.array([0, 0, 1])
+HKL_110 = np.array([1, 1, 0])
+HKL_101 = np.array([1, 0, 1])
+HKL_011 = np.array([0, 1, 1])
+HKL_111 = np.array([1, 1, 1])
+HKL_211 = np.array([2, 1, 1])
+HKL_121 = np.array([1, 2, 1])
+HKL_221 = np.array([2, 2, 1])
+HKL_NAMES = [HKL_100_NAME, HKL_010_NAME, HKL_001_NAME, HKL_110_NAME, HKL_101_NAME, HKL_011_NAME, HKL_111_NAME,
+             HKL_211_NAME, HKL_121_NAME, HKL_221_NAME]
+# HKL_100_NAME, HKL_010_NAME, HKL_001_NAME, HKL_110_NAME, HKL_101_NAME, HKL_011_NAME, HKL_111_NAME
+HKL_VECTORS = [HKL_100, HKL_010, HKL_001, HKL_110, HKL_101, HKL_011, HKL_111, HKL_211, HKL_121, HKL_221]
+# HKL_100, HKL_010, HKL_001, HKL_110, HKL_101, HKL_011, HKL_111
+HKL_DICT = dict(zip(HKL_NAMES, HKL_VECTORS))
+
+WAVENUMBERS_IN = [1.5e10]  # , 1.6e10
 
 
 # PLOTPATH = "..\Report\Calculations\\"
@@ -241,7 +280,7 @@ def plot_geometry(geo_ctx: MushroomContext):
     plt.plot(-geo_ctx.detector_points[0], geo_ctx.detector_points[1], '.', color='#8c564b')
 
     plt.axis("equal")
-    plt.title("Geometry (sectional view)")
+    # plt.title("Geometry (sectional view)")
     plot_filename = ".".join([geo_ctx.filename_geo, EXTENSION_PNG])
     plt.tick_params(axis="both", direction="in")
     plt.savefig(plot_filename, bbox_inches='tight')
@@ -334,19 +373,20 @@ def plot_resolution_kf(geo_ctx: MushroomContext):
     all_dqx_m, all_dqy_m, all_dqz_m = resolution_calculation(geo_ctx=geo_ctx)
 
     fig, ax = plt.subplots()
-    ax.plot(all_kf[max_index:] * 1e-10, all_dqx_m[max_index:] * 1e-10, color="blue")
-    ax.plot(all_kf[max_index:] * 1e-10, all_dqy_m[max_index:] * 1e-10, color="red")
-    ax.plot(all_kf[max_index:] * 1e-10, all_dqz_m[max_index:] * 1e-10, color="gold")
+    ax.plot(all_kf[max_index:] * 1e-10, all_dqx_m[max_index:] * 1e-10, color="blue", label="x: horizontal")
+    ax.plot(all_kf[max_index:] * 1e-10, all_dqy_m[max_index:] * 1e-10, color="red", label="y: vertical")
+    ax.plot(all_kf[max_index:] * 1e-10, all_dqz_m[max_index:] * 1e-10, color="darkgoldenrod", label="z: along $k_i$")
     ax.set_xlabel(r'Wavenumber $k_f$ ($\AA^{-1}$)')
     ax.set_ylabel(r"Uncertainty $\Delta k_{f,\alpha}$ ($\AA^{-1}$), $\alpha=x,y,z$")
     ax.grid()
-    ax.legend(("x: horizontal", "y: vertical", r"z: along $k_f$"))
+    ax.legend(labelcolor=["blue", "red", "darkgoldenrod"], loc='upper left', bbox_to_anchor=(0, 1),
+              framealpha=0.5)
     ax.tick_params(axis="both", direction="in")
 
     ax2 = ax.twinx()  # instantiate a second axes that shares the same x-axis
     colour_ax2 = "green"
     dkf_percent = all_dqz_m / all_kf * 1e2
-    ax2.plot(all_kf[max_index:] * 1e-10, dkf_percent[max_index:], '1', color=colour_ax2)
+    ax2.plot(all_kf[max_index:] * 1e-10, dkf_percent[max_index:], color=colour_ax2)
     ax2.tick_params(axis="y", direction="in")
     ax2.set_ylabel(r"$\dfrac{\Delta k_f}{k_f}$ * 100%", color=colour_ax2)
     ax2.tick_params(axis='y', color=colour_ax2, labelcolor=colour_ax2)
@@ -457,7 +497,7 @@ def mushroom_wavevector_transfer(geo_ctx: MushroomContext):
     mushroom_qz = np.array(list(map(lambda i: np.array(list(
         map(lambda j: geo_ctx.wavevector_transfer(index_pol=i, index_azi=j)[2], range(geo_ctx.azi_angles.shape[0])))),
                                     range(geo_ctx.pol_angles.shape[0]))))
-    return mushroom_qx, mushroom_qy, mushroom_qz
+    return np.array([mushroom_qx, mushroom_qy, mushroom_qz])
 
 
 def mushroom_energy_transfer(geo_ctx: MushroomContext):
@@ -475,36 +515,48 @@ def mushroom_q_resolution(geo_ctx: MushroomContext):
     return resol_qx, resol_qy, resol_qz
 
 
-def sectional_qx(qx, qy, qz, dqx, dqy, qdz, hw):
-    grid_qy = np.linspace(np.min(qy), np.max(qy), num=GRID_NUM)
-    grid_qz = np.linspace(np.min(qz), np.max(qz), num=GRID_NUM)
-    pass
+def sample_init(vert_axis, rot_axis, angle):
+    """
+    initialise the sample orientation
+    :param vert_axis: original axis of the sample pointing to the (0 ,0, 1) direction
+    :param rot_axis: rotation axis around which the vertical axis is rotated to the new vertical one
+    :param angle: the opposite value will be passed to the rotation formula, since the axis itself rotates
+    :return: the new vertical axis
+    """
+    return geo.rotation_3d(vector=vert_axis, rot_axis=rot_axis, angle=-angle)
 
 
-def dispersion_calc_plot(geo_ctx: MushroomContext, calc_term, extension, q_unit):
-    def energy_transfer(qx_per_rot, qy_per_rot, qz_per_rot):
+def dispersion_calc_plot(geo_ctx: MushroomContext, extension, q_unit):
+    # def energy_transfer(qx_per_rot, qy_per_rot, qz_per_rot):
+    def energy_transfer(qvector_per_rot, calc_term):
+
         #  values of all the qx, qy, qz in each sample rotation
-        nonlocal calc_term, geo_ctx
+        nonlocal geo_ctx
         if calc_term == TERM_MAGNON:
-            magnon_hw = np.array(list(map(lambda i: magnonmdl.magnon_energy(
-                wavevector_transfer=np.array([qx_per_rot[i], qy_per_rot[i], qz_per_rot[i]])),
-                                          range(qx_per_rot.shape[0]))))
+            # magnon_hw = np.array(list(map(lambda i: magnonmdl.magnon_energy(
+            #     wavevector_transfer=np.array([qx_per_rot[i], qy_per_rot[i], qz_per_rot[i]])),
+            #                               range(qx_per_rot.shape[0]))))
+            magnon_hw = np.apply_along_axis(magnonmdl.magnon_energy, axis=0, arr=qvector_per_rot)
             return magnon_hw
         elif calc_term == TERM_MUSHROOM:
             mushroom_hw = mushroom_energy_transfer(geo_ctx=geo_ctx).flatten()
             return mushroom_hw
         elif calc_term == TERM_MUSHROOM_MAGNON:
-            magnon_hw = np.array(list(map(lambda i: magnonmdl.magnon_energy(
-                wavevector_transfer=np.array([qx_per_rot[i], qy_per_rot[i], qz_per_rot[i]])),
-                                          range(qx_per_rot.shape[0]))))
+            magnon_hw = np.apply_along_axis(magnonmdl.magnon_energy, axis=0, arr=qvector_per_rot)
+            # magnon_hw = np.array(list(map(lambda i: magnonmdl.magnon_energy(
+            #     wavevector_transfer=np.array([qx_per_rot[i], qy_per_rot[i], qz_per_rot[i]])),
+            #                               range(qx_per_rot.shape[0]))))
             mushroom_hw = mushroom_energy_transfer(geo_ctx=geo_ctx)
             rela_uncer_hw = np.array(list(map(lambda i: np.array(list(
                 map(lambda j: de_of_e_from_an(geo_ctx=geo_ctx, an_ind_now=i, an_ind_near=1 if i == 0 else i - 1),
                     range(mushroom_hw.shape[1])))), range(mushroom_hw.shape[0]))))
             mushroom_hw, rela_uncer_hw = mushroom_hw.flatten(), rela_uncer_hw.flatten()
+            # scatter_hw = np.array(list(map(
+            #     lambda i: magnon_scattered(scattering_de=mushroom_hw[i], magnon_de=magnon_hw[i],
+            #                                de_of_e=rela_uncer_hw[i]), range(qx_per_rot.shape[0]))))
             scatter_hw = np.array(list(map(
                 lambda i: magnon_scattered(scattering_de=mushroom_hw[i], magnon_de=magnon_hw[i],
-                                           de_of_e=rela_uncer_hw[i]), range(qx_per_rot.shape[0]))))
+                                           de_of_e=rela_uncer_hw[i]), range(mushroom_hw.shape[0]))))
             return scatter_hw
         else:
             raise ValueError("Invalid term to define the dispersion.")
@@ -516,14 +568,98 @@ def dispersion_calc_plot(geo_ctx: MushroomContext, calc_term, extension, q_unit)
         else:
             return q_value / (2 * np.pi / magnonmdl.l_const)
 
+    def rlu2q(rlu):
+        return np.array(rlu) * (2 * np.pi / magnonmdl.l_const)
+
+    def line_through_points(line_direction, points, point=None):
+        def numbers_one_point(point):
+            nonlocal resol, line_direction, points
+            return np.count_nonzero(
+                np.apply_along_axis(geo.point2line_3d, axis=0, arr=points, line_direction=line_direction,
+                                    point_on=point) < resol)
+
+        resol = 0.025e10  # unit m^⁻1
+        # TODO:implement the true resolution at each point
+        if point is not None:
+            distances = np.apply_along_axis(geo.point2line_3d, axis=0, arr=points, line_direction=line_direction,
+                                            point_on=point)
+            print(np.min(distances) * 1e-10, np.max(distances) * 1e-10)
+            other_points = distances < resol
+            return other_points
+        else:
+            which_point = points[:, np.argmax(np.apply_along_axis(numbers_one_point, axis=0, arr=points))]
+            other_points = np.apply_along_axis(geo.point2line_3d, axis=0, arr=points, line_direction=line_direction,
+                                               point_on=which_point) < resol
+            return which_point, other_points
+
+    def q_label(component, unit):
+        if component in AXES:
+            return r"$Q_{:s}$ ({:s})".format(component, unit)
+        elif component == NORM:
+            return r"$|\vec{{Q}}|$ ({:s})".format(unit)
+        else:
+            raise ValueError("Unknown component given. It must be either an axis or the norm")
+
+    def do_plot(calc_term):
+        nonlocal fig, ax, rotation, dim_info, geo_ctx, extension
+        # sample_tilt1 = int(np.rad2deg(tilt_angle))
+        # sample_tilt2 = 0
+        # if sample_tilt1 != 0 or sample_tilt2 != 0:
+        #     sample_tilt = "({:d},{:d})".format(sample_tilt1, sample_tilt2)
+        # else:
+        #     sample_tilt = ""
+        if calc_term == TERM_MUSHROOM:
+            filename = "{:s}_ki{:.1f}_Rotx{:d}_{:s}.{:s}".format(calc_term, geo_ctx.wavenumber_in * 1e-10, rotation,
+                                                                 dim_info, extension)
+        else:
+            filename = "{:s}_ki{:.1f}_{:s}_Rotx{:d}_{:s}.{:s}".format(calc_term, geo_ctx.wavenumber_in * 1e-10,
+                                                                      magnonmdl.name, rotation, dim_info, extension)
+        ax.tick_params(axis="both", direction="in")  # , pad=-5
+        fig.savefig(filename, bbox_inches='tight')
+        plt.close(fig)
+        print("Plot saved: {:s}".format(filename))
+
+    def hkl_plot(hkl_element):
+        hkl_element = int(round(hkl_element))
+        if hkl_element == 0:
+            return ""
+        else:
+            return r"$+ {:d}\xi$".format(hkl_element)
+
+    def points2xi(point, points, hkl):
+        point = np.array(point)
+        hkl = np.array(hkl)
+        for x, i in enumerate(hkl):
+            x = int(round(x))
+            if x != 0:
+                return (points[i, :] - point[i]) / float(x)
+
+    def xi2points(point, hkl, xi):
+        if isinstance(xi, float):
+            point = np.array(point)
+            hkl = np.array(hkl)
+            return xi * hkl + point
+        else:
+            raise ValueError("xi should be a float")
+
+    def mark_energy(mark, point, hkl):
+        point = np.array(point)
+        hkl = np.array(hkl)
+        return magnonmdl.magnon_energy(wavevector_transfer=np.add(point, mark * hkl))
+
     # Mushroom values are independent of the sample --> r.l.u. does not make much sense for this
-    if calc_term == TERM_MUSHROOM:
-        q_unit = Q_UNIT_REAL
+    # if calc_term == TERM_MUSHROOM:
+    #     q_unit = Q_UNIT_REAL
+
+    # sample_rot_axis = sample_init(vert_axis=SAMPLE_INIT_ROT, rot_axis=SAMPLE_TILT_AXIS1, angle=tilt_angle)
+    print("The axis now: {:.2f},{:.2f},{:.2f}".format(*SAMPLE_INIT_ROT))
 
     collect_qx, collect_qy, collect_qz = mushroom_wavevector_transfer(geo_ctx=geo_ctx)
     collect_qx = collect_qx.flatten()
     collect_qy = collect_qy.flatten()
     collect_qz = collect_qz.flatten()
+    collect_q_vector = np.apply_along_axis(geo.rotation_3d, axis=0, arr=np.array([collect_qx, collect_qy, collect_qz]),
+                                           rot_axis=SAMPLE_INIT_ROT, angle=-np.deg2rad(0))
 
     # collect_dqx, collect_dqy, collect_dqz = mushroom_q_resolution(geo_ctx=geo_ctx)
     # collect_dqx = collect_dqx.flatten()
@@ -533,117 +669,178 @@ def dispersion_calc_plot(geo_ctx: MushroomContext, calc_term, extension, q_unit)
     rotation_max = np.max(ROTATION_NUMBERS)
     size_per_rotation = collect_qx.shape[0]
 
-    qx_now, qy_now, qz_now = collect_qx, collect_qy, collect_qz
-    # dqx_now, dqy_now, dqz_now = collect_dqx, collect_dqy, collect_dqz
-    collect_hw = energy_transfer(qx_per_rot=qx_now, qy_per_rot=qy_now, qz_per_rot=qz_now)
+    q_vector_now = collect_q_vector
+    collect_hw_mush = energy_transfer(qvector_per_rot=q_vector_now, calc_term=TERM_MUSHROOM)
+    # collect_hw_mag = energy_transfer(qvector_per_rot=q_vector_now,calc_term=TERM_MUSHROOM)
 
     # calculate all the data for the maximal times of rotation
     if rotation_max > 0:
         for r in range(1, rotation_max + 1):
-            qx_now, qy_now = geo.rotation_around_z(rot_angle=ROTATION_STEP, old_x=qx_now, old_y=qy_now)
-            collect_qx = np.append(collect_qx, qx_now)
-            collect_qy = np.append(collect_qy, qy_now)
-            collect_qz = np.append(collect_qz, qz_now)
-            # collect_dqx = np.append(collect_dqx, dqx_now)
-            # collect_dqy = np.append(collect_dqy, dqy_now)
-            # collect_dqz = np.append(collect_dqz, dqz_now)
-            collect_hw = np.append(collect_hw, energy_transfer(qx_per_rot=qx_now, qy_per_rot=qy_now, qz_per_rot=qz_now))
+            q_vector_now = np.apply_along_axis(geo.rotation_3d, axis=0, arr=q_vector_now, rot_axis=SAMPLE_INIT_ROT,
+                                               angle=-ROTATION_STEP)
+            collect_q_vector = np.append(collect_q_vector, q_vector_now, axis=1)
+            collect_hw_mush = np.append(collect_hw_mush,
+                                        energy_transfer(qvector_per_rot=q_vector_now, calc_term=TERM_MUSHROOM))
     for rotation in ROTATION_NUMBERS:
         # take the respective data from the data collection for each rotation times
         size = size_per_rotation * (rotation + 1)
-        data_qx = collect_qx[:size + 1]
-        data_qy = collect_qy[:size + 1]
-        data_qz = collect_qz[:size + 1]
+        data_q_vector = collect_q_vector[:, :size + 1]
         # data_dqx = collect_dqx[:size + 1]
         # data_dqy = collect_dqy[:size + 1]
         # data_dqz = collect_dqz[:size + 1]
-        data_hw = collect_hw[:size + 1]
+        data_hw_mush = collect_hw_mush[:size + 1]
         for dim in DIMENSIONS:
-            if dim == DIM_1:
-                fig, ax = plt.subplots(constrained_layout=True)
-                ax.scatter(plot_q(np.linalg.norm([data_qx, data_qy, data_qz], axis=0)), neutron.joule2mev(data_hw),
-                           c=neutron.joule2mev(data_hw), marker=".")
-                ax.set_xlim(plot_q(np.min(data_qx)) * 1.1, plot_q(np.max(data_qx)) * 1.1)
-                ax.set_xlabel(r"$|\vec{{Q}}|=|\vec{{k}}_{{i}}-\vec{{k}}_{{f}}|$ ({:s})".format(q_unit))
-                ax.set_ylabel(r"$\hbar\omega=E_{i}-E_{f}$ (meV)")
-            elif dim == DIM_2:
-                fig, ax = plt.subplots(constrained_layout=True)
-                plt.axis("equal")
-                cnt = ax.scatter(plot_q(data_qx), plot_q(data_qy), c=neutron.joule2mev(data_hw), marker=".")
-                ax.set_xlim(plot_q(np.min(data_qx)) * 1.1, plot_q(np.max(data_qx)) * 1.1)
-                ax.set_ylim(plot_q(np.min(data_qy)) * 1.1, plot_q(np.max(data_qy)) * 1.1)
-                ax.set_xlabel(r"$Q_x=k_{{i,x}}-k_{{f,x}}$ ({:s})".format(q_unit))
-                ax.set_ylabel(r"$Q_y=k_{{i,y}}-k_{{f,y}}$ ({:s})".format(q_unit))
-                cbar_scatt = fig.colorbar(cnt, ax=ax)
-                cbar_scatt.set_label(r"$\hbar\omega=E_{i}-E_{f}$ (meV)")
-            elif dim == DIM_3:
-                fig = plt.figure(constrained_layout=True)
-                ax = fig.add_subplot(111, projection='3d')
-                cnt = ax.scatter(plot_q(data_qx), plot_q(data_qy), neutron.joule2mev(data_hw),
-                                 c=neutron.joule2mev(data_hw), marker=".")
-                ax.set_xlim(plot_q(np.min(data_qx)) * 1.1, plot_q(np.max(data_qx)) * 1.1)
-                ax.set_ylim(plot_q(np.min(data_qy)) * 1.1, plot_q(np.max(data_qy)) * 1.1)
-                ax.tick_params(axis="z", direction="in")
-                ax.set_xlabel(r"$Q_x$ ({:s})".format(q_unit))
-                ax.set_ylabel(r"$Q_y$ ({:s})".format(q_unit))
-                cbar_scatt = fig.colorbar(cnt, ax=ax)
-                cbar_scatt.set_label(r"$\hbar\omega$ (meV)")
-            elif dim == DIM_4:
-                fig = plt.figure(constrained_layout=True)
-                ax = fig.add_subplot(111, projection='3d')
-                cnt = ax.scatter(plot_q(data_qx), plot_q(data_qy), plot_q(data_qz), c=neutron.joule2mev(data_hw),
-                                 marker=".")
-                # ax.set_xlim(plot_q(np.min(data_qx)) * 1.1, plot_q(np.max(data_qx)) * 1.1)
-                # ax.set_ylim(plot_q(np.min(data_qy)) * 1.1, plot_q(np.max(data_qy)) * 1.1)
-                ax.tick_params(axis="z", direction="in")
-                ax.set_xlabel(r"$Q_x$ ({:s})".format(q_unit), labelpad=-3)
-                ax.set_ylabel(r"$Q_y$ ({:s})".format(q_unit), labelpad=-3)
-                ax.set_zlabel(r"$Q_z$ ({:s})".format(q_unit), labelpad=7)
-                cbar_scatt = fig.colorbar(cnt, ax=ax, pad=0.1)
-                cbar_scatt.set_label(r"$\hbar\omega$ (meV)")
-
+            dim_info = dim
+            if dim in DIM_PROJ:
+                pass
+                # if dim == DIM_1:
+                #     fig, ax = plt.subplots(constrained_layout=True)
+                #     ax.scatter(plot_q(np.linalg.norm(data_q_vector, axis=0)), neutron.joule2mev(data_hw),
+                #                c=neutron.joule2mev(data_hw), marker=".")
+                #     ax.set_xlabel(q_label(NORM, q_unit))
+                #     ax.set_ylabel(HW_LABEL)
+                #     do_plot()
+                # elif dim == DIM_2:
+                #     fig, ax = plt.subplots(constrained_layout=True)
+                #     plt.axis("equal")
+                #     cnt = ax.scatter(plot_q(data_q_vector[:, 0]), plot_q(data_q_vector[:, 1]),
+                #                      c=neutron.joule2mev(data_hw), marker=".")
+                #     ax.set_xlabel(q_label(AXIS_X, q_unit))
+                #     ax.set_ylabel(q_label(AXIS_Y, q_unit))
+                #     cbar_scatt = fig.colorbar(cnt, ax=ax)
+                #     cbar_scatt.set_label(HW_LABEL)
+                #     do_plot()
+                # elif dim == DIM_3:
+                #     fig = plt.figure(constrained_layout=True)
+                #     ax = fig.add_subplot(111, projection='3d')
+                #     cnt = ax.scatter(plot_q(data_q_vector[:, 0]), plot_q(data_q_vector[:, 1]),
+                #                      neutron.joule2mev(data_hw), c=neutron.joule2mev(data_hw), marker=".")
+                #     ax.tick_params(axis="z", direction="in")
+                #     ax.set_xlabel(q_label(AXIS_X, q_unit), labelpad=-3)
+                #     ax.set_ylabel(q_label(AXIS_Y, q_unit), labelpad=-3)
+                #     cbar_scatt = fig.colorbar(cnt, ax=ax, pad=0.1)
+                #     cbar_scatt.set_label(HW_LABEL)
+                # elif dim == DIM_4:
+                #     fig = plt.figure(constrained_layout=True)
+                #     ax = fig.add_subplot(111, projection='3d')
+                #     cnt = ax.scatter(plot_q(data_q_vector[:, 0]), plot_q(data_q_vector[:, 1]),
+                #                      plot_q(data_q_vector[:, 2]), c=neutron.joule2mev(data_hw), marker=".")
+                #     # ax.set_xlim(plot_q(np.min(data_qx)) * 1.1, plot_q(np.max(data_qx)) * 1.1)
+                #     # ax.set_ylim(plot_q(np.min(data_qy)) * 1.1, plot_q(np.max(data_qy)) * 1.1)
+                #     ax.tick_params(axis="z", direction="in")
+                #     ax.set_xlabel(q_label(AXIS_X, q_unit), labelpad=-3)
+                #     ax.set_ylabel(q_label(AXIS_Y, q_unit), labelpad=-3)
+                #     ax.set_zlabel(q_label(AXIS_Z, q_unit), labelpad=7)
+                #     cbar_scatt = fig.colorbar(cnt, ax=ax, pad=0.1)
+                #     cbar_scatt.set_label(HW_LABEL)
+                # else:
+                #     raise ValueError("Unknown dimension or the given dimension is not a simple version.")
+            elif dim == DIM_LINE:
+                # if term != TERM_MUSHROOM_MAGNON:
+                #     raise ValueError("This plot works only for Mushroom measuring the dispersion")
+                # index_finite_hw = np.isfinite(data_hw)
+                # points_finite_hw = data_q_vector[:, index_finite_hw]
+                for point_interest in POINTS_INTEREST:
+                    for hkl_key in HKL_DICT:
+                        hkl_value = HKL_DICT[hkl_key]
+                        fig, ax = plt.subplots(constrained_layout=True)
+                        # index_point, index_points = line_through_points(hkl_value, points_finite_hw)
+                        index_points = line_through_points(hkl_value, data_q_vector, point=rlu2q(point_interest))
+                        if np.count_nonzero(index_points) > 0:
+                            points_near_line = data_q_vector[:, index_points]
+                            mush_hw = data_hw_mush[index_points]
+                            mush_xi = points2xi(point=rlu2q(point_interest), points=points_near_line, hkl=hkl_value)
+                            indices_measure = np.isfinite(np.array(list(map(
+                                lambda i: magnon_scattered(de_of_e=0.05, scattering_de=mush_hw[i],
+                                                           magnon_de=magnonmdl.magnon_energy(
+                                                               xi2points(point=point_interest, hkl=hkl_value,
+                                                                         xi=mush_xi[i]))), range(mush_hw.shape[0])))))
+                            measure_xi = mush_xi[indices_measure]
+                            measure_hw = mush_hw[indices_measure]
+                            max_distance = np.max(
+                                np.apply_along_axis(func1d=geo.points_distance, axis=0, arr=points_near_line,
+                                                    point2=rlu2q(point_interest)))
+                            points_marks = np.linspace(-max_distance, max_distance, num=100)
+                            theory_hw = np.array(list(map(lambda m: mark_energy(m, rlu2q(point_interest), hkl_value),
+                                                          points_marks)))
+                            if measure_hw.shape[0] > 0:
+                                theory_hw *= np.average(measure_hw) / abs(np.average(measure_hw))
+                            ax.plot(plot_q(points_marks), neutron.joule2mev(theory_hw), "blue")
+                            ax.scatter(plot_q(mush_xi), neutron.joule2mev(mush_hw), c="red", marker="o")
+                            ax.scatter(plot_q(measure_xi), neutron.joule2mev(measure_hw), c="lime", marker="*")
+                            # ax.scatter(0, neutron.joule2mev(data_hw[index_finite_hw][index_point]), c="red", marker="1")
+                            ax.set_xlabel(r"({:.1f}{:s}, {:.1f}{:s}, {:.1f}{:s}) ({:s})".format(point_interest[0],
+                                                                                                hkl_plot(hkl_value[0]),
+                                                                                                point_interest[1],
+                                                                                                hkl_plot(hkl_value[1]),
+                                                                                                point_interest[2],
+                                                                                                hkl_plot(hkl_value[2]),
+                                                                                                q_unit))
+                            ax.set_ylabel(HW_LABEL)
+                        else:
+                            print("Direction {:s} does not have any points".format(hkl_key))
+                            continue
+                        dim_info = "[{:s}]({:.1f},{:.1f},{:.1f})".format(hkl_key, *point_interest)
+                        do_plot(calc_term=TERM_MUSHROOM_MAGNON)
+            elif dim == DIM_PLANE:
+                index_finite_hw = np.isfinite(data_hw_mush)
+                hw_hist_counts, hw_hist_bins = np.histogram(a=data_hw_mush[index_finite_hw], bins=np.sort(
+                    neutron.energy_transfer(wavenumber_in=geo_ctx.wavenumber_in,
+                                            wavenumber_out=geo_ctx.wavenumbers_out)))
+                count_index = np.argmax(hw_hist_counts[:-1])
+                layer_number = 20
+                if count_index < hw_hist_counts.shape[0] - layer_number:
+                    index_range = range(0, layer_number)
+                else:
+                    index_range = range(-layer_number, 1)
+                for i in index_range:
+                    index = count_index + i
+                    hw1, hw2 = hw_hist_bins[index], hw_hist_bins[index + 1]
+                    hw_index = np.where(np.bitwise_and(hw1 <= data_hw_mush, data_hw_mush < hw2))[0]
+                    fig, ax = plt.subplots(constrained_layout=True)
+                    plt.axis("equal")
+                    ax.scatter(plot_q(data_q_vector[0, hw_index]), plot_q(data_q_vector[1, hw_index]),
+                               c=neutron.joule2mev(data_hw_mush[hw_index]), marker=".")  # cnt
+                    ax.set_xlim(plot_q(np.min(data_q_vector[0, :])), plot_q(np.max(data_q_vector[0, :])))
+                    ax.set_ylim(plot_q(np.min(data_q_vector[1, :])), plot_q(np.max(data_q_vector[1, :])))
+                    # cbar_scatt = fig.colorbar(cnt, ax=ax)
+                    # cbar_scatt.set_label(HW_LABEL)
+                    ax.set_xlabel(q_label(AXIS_X, q_unit))
+                    ax.set_ylabel(q_label(AXIS_Y, q_unit))
+                    ax.set_title(r"$\hbar\omega={:.2f}$ meV".format(neutron.joule2mev(hw1)))
+                    dim_info = "hw{:.2f}".format(neutron.joule2mev(hw1))
+                    do_plot(calc_term=TERM_MUSHROOM_MAGNON)
             else:
-                raise ValueError("The given dimension is invalid for plotting.")
-            ax.tick_params(axis="x", direction="in", pad=-5)
-            ax.tick_params(axis="y", direction="in", pad=-5)
-            # if rotation == 0:
-            #     ax.set_title("No sample rotation")
-            # else:
-            #     ax.set_title(r"Sample Rotation {:.0f}° x {:d}".format(np.rad2deg(ROTATION_STEP), rotation))
+                raise ValueError("The given dimension is unknown {:s}.".format(dim))
+                # if rotation == 0:
+                #     ax.set_title("No sample rotation")
+                # else:
+                #     ax.set_title(r"Sample Rotation {:.0f}° x {:d}".format(np.rad2deg(ROTATION_STEP), rotation))
 
-            ax.set_title(r"{:s}, $\vec{{k}}_i$={:.1f} $\AA^{{-1}}$".format(calc_term, geo_ctx.wavenumber_in * 1e-10))
-            if calc_term == TERM_MUSHROOM:
-                filename = "{:s}_Rot{:d}_{:s}_{:.1f}.{:s}".format(calc_term, rotation, dim,
-                                                                  geo_ctx.wavenumber_in * 1e-10, extension)
-            else:
-                filename = "{:s}_Rot{:d}_{:s}_{:s}_{:.1f}.{:s}".format(calc_term, rotation, dim, magnonmdl.name,
-                                                                       geo_ctx.wavenumber_in * 1e-10, extension)
-            # filename = PLOTPATH + filename
-            fig.savefig(filename, bbox_inches='tight')  #
-            plt.close(fig)
-            print("Plot saved: {:s}".format(filename))
+                # ax.set_title(r"{:s}, $\vec{{k}}_i$={:.1f} $\AA^{{-1}}$".format(calc_term, geo_ctx.wavenumber_in * 1e-10))
 
 
-geometryctx = MushroomContext()
-magnonmdl = MagnonModel(model_name=MAGNON_MCSTAS, latt_const=4.5 * 1e-10, spin_coupling=neutron.mev2joule(0.3))
-# magnonmdl = MagnonModel(model_name=MAGNON_IRON, latt_const=2.859e-10, stiff_const=neutron.mev2joule(266 * 1e-20))
+for ki in WAVENUMBERS_IN:
+    geometryctx = MushroomContext(wavenumber_in=ki)
+    magnonmdl = MagnonModel(model_name=MAGNON_DEFAULT, latt_const=4.5 * 1e-10, spin_coupling=neutron.mev2joule(0.3))
+    # magnonmdl = MagnonModel(model_name=MAGNON_IRON, latt_const=2.859e-10, stiff_const=neutron.mev2joule(266 * 1e-20))
 
-# print("The index of the middle segment of the polar angle range: {:d}".format(int(geometryctx.pol_middle_index + 1)))
+    # print("The index of the middle segment of the polar angle range: {:d}".format(int(geometryctx.pol_middle_index + 1)))
 
-# plot_geometry(geo_ctx=geometryctx)
+    # plot_geometry(geo_ctx=geometryctx)
 
-# plot_distance_fd_as(geo_ctx=geometryctx)
+    # plot_distance_fd_as(geo_ctx=geometryctx)
 
-# plot_analyser_comparison(geo_ctx=geometryctx)
+    # plot_analyser_comparison(geo_ctx=geometryctx)
 
-# plot_resolution_kf(geo_ctx=geometryctx)
+    plot_resolution_kf(geo_ctx=geometryctx)
 
-# plot_resolution_polarangles(geo_ctx=geometryctx)
-# This might not be the best strategy to plot the resolution
+    # plot_resolution_polarangles(geo_ctx=geometryctx)
+    # This might not be the best strategy to plot the resolution
 
-# write_mcstas(geo_ctx=geometryctx)
+    # write_mcstas(geo_ctx=geometryctx)
 
-# wavenumbers_psd(geo_ctx=geometryctx)
+    # wavenumbers_psd(geo_ctx=geometryctx)
 
-for term in CALC_TERMS:
-    dispersion_calc_plot(geo_ctx=geometryctx, calc_term=term, extension=EXTENSION_PNG, q_unit=Q_UNIT_RLU)
+    # for term in CALC_TERMS:
+    # dispersion_calc_plot(geo_ctx=geometryctx, extension=EXTENSION_PNG, q_unit=Q_UNIT_RLU)

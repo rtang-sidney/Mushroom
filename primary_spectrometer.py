@@ -44,7 +44,7 @@ def get_resolution_monochromator(ki):
         # distance_ms: monochromator-sample distance
         divergence_in = instr.divergence_initial
         if axis == AXIS_AZIMUTHAL:
-            divergence_out = geo.angle_triangle(a=instr.distance_ms, c=instr.sample_diameter)
+            divergence_out = geo.angle_triangle(a=instr.distance_ms, c=instr.sam_dia)
         elif axis == AXIS_POLAR:
             divergence_out = geo.angle_triangle(a=instr.distance_ms, c=instr.sample_height)
         else:
@@ -52,7 +52,7 @@ def get_resolution_monochromator(ki):
         return divergence_in, divergence_out
 
     def angular_spread_monochromator(axis):
-        eta = instr.moasic_analyser  # mosaic
+        eta = instr.moasic_an  # mosaic
         alpha_i, alpha_f = divergence_mono(axis=axis)  # incoming and outgoing divergence
         numerator = alpha_i ** 2 * alpha_f ** 2 + eta ** 2 * alpha_i ** 2 + eta ** 2 * alpha_f ** 2
         denominator = 4 * eta ** 2 + alpha_i ** 2 + alpha_f ** 2
@@ -60,7 +60,7 @@ def get_resolution_monochromator(ki):
 
     def monochromator_twotheta():
         nonlocal ki
-        return neutron.bragg_wavenumber2angle(wavenumber=ki, lattice_distance=instr.lattice_distance_pg002)
+        return neutron.bragg_wavenumber2angle(wavenumber=ki, lattice_distance=instr.interplanar_pg002)
 
     def get_uncertainty_ki():
         nonlocal ki

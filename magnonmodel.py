@@ -23,58 +23,6 @@ class MagnonModel:
         else:
             raise ValueError("Either spin coupling or stiff constant must be given.")
 
-    # not used
-    def if_scattered(self, ki_vector, kf_vector):
-        """
-        gives back whether the scattering event is allowed or not
-        :param ki_vector: m-1, wave-vector of neutrons
-        :param kf_vector: m-1, outgoing wave-vector of neutrons
-        :return: True (if scattering allowed) or False (if not allowed)
-        """
-        scattering_vector = ki_vector - kf_vector  # wave-vector transfer
-        reci_const = 2 * np.pi / self.l_const
-        hkl = np.round(scattering_vector / reci_const)
-        # print(scattering_vector, reci_const, hkl)
-        q_vector = scattering_vector - hkl * reci_const
-        de = neutron.planck_constant ** 2 * (np.linalg.norm(ki_vector) ** 2 - np.linalg.norm(kf_vector) ** 2) / (
-                2 * neutron.mass_neutron)
-        dd = 2 * self.spin_coup * self.spin * self.l_const ** 2
-        if abs(de - dd * np.linalg.norm(q_vector) ** 2) / abs(de) < 5e-2:
-            return 1
-        else:
-            return 0
-
-    # not used
-    @staticmethod
-    def qyqz_to_kf(geo_ctx: MushroomContext, de, qy, qz, acute=True):
-        ki = geo_ctx.wavenumber_in
-        kf = np.sqrt(ki ** 2 - 2 * neutron.mass_neutron * de / neutron.planck_constant ** 2)
-        if abs(qz / kf) <= 1:
-            phi = np.arcsin(-qz / kf)
-            if abs(qy / (kf * np.cos(phi))) <= 1:
-                theta = np.arcsin(-qy / (kf * np.cos(phi)))
-                if np.min(geo_ctx.wavenumbers_out) < kf < np.max(
-                        geo_ctx.wavenumbers_out):
-                    if np.min(geo_ctx.pol_angles) < phi < np.max(
-                            geo_ctx.pol_angles):
-                        if np.min(geo_ctx.azi_nega) < theta < np.max(geo_ctx.azi_nega) or np.min(
-                                geo_ctx.azi_posi) < theta < np.max(geo_ctx.azi_posi):
-                            if acute:
-                                return neutron.wavenumber2wavevector(kf, theta, phi)
-                            else:
-                                # TODO: correct this for negative angles
-                                return neutron.wavenumber2wavevector(kf, np.pi - theta, phi)
-                        else:
-                            return np.empty(3)
-                    else:
-                        return np.empty(3)
-                else:
-                    return np.empty(3)
-            else:
-                return np.empty(3)
-        else:
-            return np.empty(3)
-
     def magnon_energy(self, wavevector_transfer):
         reci_const = 2 * np.pi / self.l_const
         hkl = np.round(wavevector_transfer / reci_const)
@@ -83,7 +31,6 @@ class MagnonModel:
         return 2 * self.spin_coup * self.spin * (
                 3 - np.cos(magnon_vector[0] * self.l_const) - np.cos(magnon_vector[1] * self.l_const) - np.cos(
             magnon_vector[2] * self.l_const))
-
 
     # not used
     def scatt_cross_qxqyde(self, qq_x, qq_y, hw, ki, resol=0.01, qq_z=None, kf=None, mushroom=False):

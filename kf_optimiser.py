@@ -6,9 +6,9 @@ import matplotlib.pyplot as plt
 
 plt.rcParams.update({'font.size': 16})
 
-AF_DISTANCE_VERT = 0.1  # m, vertical distance between the focus and the lowest segment of the analyser
-KF_RATE = 0.5  # kf_min/kf_max, should be 0.5 if one wants to cover a kf range without a gap in between
-DETECTOR_OUTER_RADIUS = 3  # m, the largest horizontal point of detector on one side
+AF_DISTANCE_VERT = 0.2  # m, vertical distance between the focus and the lowest segment of the analyser
+KF_RATE = 0.7  # kf_min/kf_max, should be 0.5 if one wants to cover a kf range without a gap in between
+DETECTOR_OUTER_RADIUS = 1.7  # m, the largest horizontal point of detector on one side
 DETECTOR_HEIGHT = 3  # m, the largest vertical distance between sample and detector
 
 PLOT_POINTS = 100
@@ -25,7 +25,7 @@ def endpoint_kf(sf, angle):
     vector_sa = point_end
     vector_af = point_focus - point_end
     analyser_twotheta = geo.angle_vectors(vector1=vector_sa, vector2=vector_af)
-    lattice_distance = instr.lattice_distance_pg002
+    lattice_distance = instr.interplanar_pg002
     wavenumber = np.pi / (lattice_distance * np.sin(analyser_twotheta / 2.0))
     return wavenumber
 
@@ -53,7 +53,7 @@ def focus2kf(sf, angle):
     angle_triangle = np.arccos(
         (2 * ellipse_semimajor ** 2 - (2 * ellipse_lin_eccen) ** 2) / (2 * ellipse_semimajor ** 2))
     analyser_twotheta = np.pi - angle_triangle
-    lattice_distance = instr.lattice_distance_pg002
+    lattice_distance = instr.interplanar_pg002
     wavenumber = np.pi / (lattice_distance * np.sin(analyser_twotheta / 2.0))
     return wavenumber
 
@@ -89,11 +89,14 @@ for i in range(sf_2d.shape[0]):
         detector_hori_size[i, j], detector_height = farest_detector(sf=sf_2d[i, j], angle=angle_2d[i, j])
         lowest_analyser[i, j] = get_endpoint(sf=sf_2d[i, j], angle=angle_2d[i, j])[-1]
         focus_vertical[i, j] = get_focus_point(sf=sf_2d[i, j], angle=angle_2d[i, j])[-1]
-        if lowest_analyser[i, j] - focus_vertical[i, j] > AF_DISTANCE_VERT and kf_min_max_2d[i, j] < KF_RATE and \
+        # if lowest_analyser[i, j] - focus_vertical[i, j] > AF_DISTANCE_VERT and kf_min_max_2d[i, j] < KF_RATE and \
+        #         detector_hori_size[i, j] < DETECTOR_OUTER_RADIUS and abs(detector_height) < DETECTOR_HEIGHT:
+        if lowest_analyser[i, j] - focus_vertical[i, j] > AF_DISTANCE_VERT and kfmax_2d[i, j] > 2e10 and \
                 detector_hori_size[i, j] < DETECTOR_OUTER_RADIUS and abs(detector_height) < DETECTOR_HEIGHT:
             print(
-                "angle_plus = {:.2f} degree, distance_sf = {:.2f} m, focus_angle = {:.2f} degree, detector_height = {:.2f} m, kfmax = {:.2f} AA-1, kfmin = {:.2f} AA-1".format(
+                "angle_plus = {:.2f} degree, distance_sf = {:.2f} m, focus_angle = {:.2f} degree, detector_height = {:.2f} m, detector_radius = {:.2f} m,kfmax = {:.2f} AA-1, kfmin = {:.2f} AA-1".format(
                     instr.angle_plus_deg, sf_2d[i, j], np.rad2deg(angle_2d[i, j]), detector_height,
+                    detector_hori_size[i, j],
                     kfmax_2d[i, j] * 1e-10,
                     kfmin_2d[i, j] * 1e-10))
 

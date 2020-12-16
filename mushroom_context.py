@@ -4,63 +4,48 @@ import geometry_calculation as geo
 import neutron_context as neutron
 
 HEIGHT_INSTR = 3.0  # m, from the highest point of the analyser to the horizontal bank of PSD
+ELLI_POINTS = 100  # number of points for the ideal ellipse
 
 
 class MushroomContext(object):
-    # this was the parameters used for a place with a radius of 0.4 m
-    # def __init__(self, angle_plus_deg=30, distance_sf=2.16, polar_focus_deg=-35.17, detector_height=2.49,
-    #              wavenumber_in=1.5 * 1e10):
-
-    # This was for the plus angle of 30 degree
-    # def __init__(self, angle_plus_deg=30, distance_sf=2.03, polar_focus_deg=-33.98, detector_height=2.27,
-    #              wavenumber_in=1.5 * 1e10):
-
-    # the following parameters are for a place with a radius of 0.25 m
-    def __init__(self, wavenumber_in=1.4e10, distance_sf=2.14, polar_focus_deg=-43.97, detector_height=2.97):
-        self.wavenumber_in = wavenumber_in  # m-1
-        self.azi_nega = np.deg2rad(np.linspace(-170, -5, num=166))
-        self.azi_posi = np.deg2rad(np.linspace(5, 170, num=166))
-        self.azi_angles = np.append(self.azi_nega, self.azi_posi)
-
+    def __init__(self, distance_sf=1.50, polar_focus_deg=-49.41, detector_height=2.28):
         self.sample_point = (0.0, 0.0)  # m
         self.foc_size = 1e-2  # m
-        self.elli_points = 100  # number of points for the ideal ellipse
 
-        self.pol_plus = np.deg2rad(instr.angle_plus_deg)
-        # slope of the line from the sample to the upmost point on the analyser
-        self.pol_minus = self.pol_plus - np.deg2rad(instr.angle_range_deg)
-        # slope of the line from the sample to the downmost point on the analyser
+        self.azi_angles = np.deg2rad(np.append(np.linspace(-170, -5, num=166), np.linspace(5, 170, num=166)))
+
+        self.pol_plus = np.deg2rad(instr.angle_plus_deg)  # the uppermost point of the analyser
+        self.pol_minus = self.pol_plus - np.deg2rad(instr.angle_range_deg)  # the nethermost point of the analyser
         self.pol_middle = (self.pol_plus + self.pol_minus) / 2.0
         self.start_point = (instr.cryo_radius, instr.cryo_radius * np.tan(self.pol_plus))
 
         self.detector_line_hori = [0.0, 1.0, detector_height]
-        self.detector_line_vert = [1.0, 0.0, -0.4]  # [1, 0, -h]: h -> horizontal position (m) of the vertical bank
+        self.detector_line_vert = [1.0, 0.0, -instr.cryo_radius]
+        # [1, 0, -h]: h -> horizontal position (m) of the vertical bank
 
-        polar_focus_rad = np.deg2rad(polar_focus_deg)
-        if polar_focus_rad < self.pol_minus:
-            self.foc_point = distance_sf * np.array([np.cos(polar_focus_rad), np.sin(polar_focus_rad)])  # m
+        self.polar_focus_rad = np.deg2rad(polar_focus_deg)
+        if self.polar_focus_rad < self.pol_minus:
+            self.foc_point = distance_sf * np.array([np.cos(self.polar_focus_rad), np.sin(self.polar_focus_rad)])  # m
         else:
             raise RuntimeError("Invalid polar angle of the other focus.")
 
-        self.filename_geo = "_".join(['Geometry', str(int(instr.angle_plus_deg)), "{:.2f}".format(distance_sf)])
-        self.filename_res = 'Resolution_Test'  # + detector_suffix
+        self.ellipse_a, self.ellipse_b, self.ellipse_c, ellipse_h, ellipse_k, ellipse_phi = self._ellipse_parameters()
 
-        self.an_seg_size = 1e-2  # m
-        points_x, points_y, self.mcstas_rotation_rad = self._generate_analyser_segments()
-        self.pol_angles = np.arctan2(points_y, points_x)
-        self.analyser_points = (points_x, points_y)
-        self.wavenumbers_out = self._wavenumbers_from_analyser()
-        self.an_2theta = np.array(
-            list(map(lambda i: self._get_an_twotheta(an_ind=i), range(self.analyser_points[0].shape[0]))))
+        self.filename_geo = "_".join(['Geometry', str(int(instr.angle_plus_deg)), "{:.2f}".format(distance_sf)])
+        self.filename_res = "_".join(['Resolution', str(int(instr.angle_plus_deg)), "{:.2f}".format(distance_sf)])
+
+        self.analyser_points, self.mcstas_rotation_rad = self._generate_analyser_segments()
+        self.pol_angles = np.arctan2(self.analyser_points[1, :], self.analyser_points[0, :])
+        self.wavenumbers_out = np.apply_along_axis(func1d=self._analyser2wavenumber, axis=0, arr=self.analyser_points)
+        self.an_2theta = np.apply_along_axis(func1d=self._analyser2twotheta, axis=0, arr=self.analyser_points)
         # print(self.wavenumbers)
         self.pol_middle_index = np.argmin(np.abs(self.pol_angles - self.pol_middle))
 
         # if the analyser is generated as a part of an ideal ellipse:
-        self.theo_ellipse_points = self._generate_analyser_ellipse()
+        self.theo_ellipse_points = self._generate_analyser_ellipse(ellipse_h, ellipse_k, ellipse_phi)
 
-        self.detector_points = self._detector_from_analyser()[:2]
-        self.dete_hori_x, self.dete_vert_y = self._detector_from_analyser()[2:]
-        # print(self.dete_hori_x, '\n\n', self.dete_vert_y)
+        self.detector_points = self._detector_from_analyser()[0]
+        self.dete_hori_x, self.dete_vert_y = self._detector_from_analyser()[1:]
 
         self.filename_mcstas = 'Analyser_{:.2f}.dat'.format(instr.cryo_radius)
         self.arm_sa_name_prefix = "arm_sa_an"
@@ -78,25 +63,28 @@ class MushroomContext(object):
         self.component_reference = "analyser_arm"
         self.group_name = "analyser"
 
-    def _ellipse_points2parameters(self):
-        """
-        calculates the parameters of the general form of an ellipse from focii, in the form of
-        A(x-h)^2 + B(x-h)(y-k) + C(y-k)^2 = 1
-        :return: parameters A, B, C (denoted by aa, bb and cc, respectively), h, k
-        """
+    def _ellipse_parameters(self):
         a = (geo.points_distance(self.sample_point, self.start_point) + geo.points_distance(
             self.foc_point, self.start_point)) / 2.0  # ellipse semi-major
         h, k = np.array(self.foc_point) / 2.0
         phi = np.arctan(k / h)  # rotational angle of the ellipse, positive sign = anti-clockwise
         c = abs(h / np.cos(phi))  # linear eccentricity, giving the distance of a focus to the ellipse centre
         b = np.sqrt(a ** 2 - c ** 2)  # semi-minor axis
+        return a, b, c, h, k, phi
 
+    def _ellipse_points2parameters(self, phi):
+        """
+        calculates the parameters of the general form of an ellipse from focii, in the form of
+        A(x-h)^2 + B(x-h)(y-k) + C(y-k)^2 = 1
+        :return: parameters A, B, C (denoted by aa, bb and cc, respectively), h, k
+        """
         # parameters of the ellipse after the rotation: aa = A, bb = B, cc = C
         # Ax^2 + Bxy + Cy^2 = 1
-        aa = np.cos(phi) ** 2 / a ** 2 + np.sin(phi) ** 2 / b ** 2
-        bb = 2 * np.cos(phi) * np.sin(phi) * (1. / a ** 2 - 1. / b ** 2)
-        cc = np.sin(phi) ** 2 / a ** 2 + np.cos(phi) ** 2 / b ** 2
-        return aa, bb, cc, h, k
+        aa = np.cos(phi) ** 2 / self.ellipse_a ** 2 + np.sin(phi) ** 2 / self.ellipse_b ** 2
+        bb = 2 * np.cos(phi) * np.sin(phi) * (
+                1. / self.ellipse_a ** 2 - 1. / self.ellipse_b ** 2)
+        cc = np.sin(phi) ** 2 / self.ellipse_a ** 2 + np.cos(phi) ** 2 / self.ellipse_b ** 2
+        return aa, bb, cc
 
     def _analyser_segment_orientation(self, analyser_point):
         """
@@ -104,8 +92,8 @@ class MushroomContext(object):
         :param analyser_point: a 2-D list or numpy array
         :return: a unit vector as a 2-D list
         """
-        vector_sa = geo.points_to_vector(point1=self.sample_point, point2=analyser_point)
-        vector_af = geo.points_to_vector(point1=analyser_point, point2=self.foc_point)
+        vector_sa = geo.points2vector(point1=self.sample_point, point2=analyser_point)
+        vector_af = geo.points2vector(point1=analyser_point, point2=self.foc_point)
         vector_tangential = geo.vector_bisector(vector_sa, vector_af)
         slope_rad = np.arctan(vector_tangential[1] / vector_tangential[0])
         return geo.unit_vector(vector_tangential), slope_rad
@@ -113,23 +101,21 @@ class MushroomContext(object):
     def _generate_analyser_segments(self):
         # generates the analyser with a finite segment size
         point_now = np.array(self.start_point)
-        analyser_x = [self.start_point[0]]
-        analyser_y = [self.start_point[1]]
+        analyser = np.copy(point_now).reshape((2, 1))
         orientation_now, mcstas_rotation_now = self._analyser_segment_orientation(point_now)
         mcstas_rotation_radian = [mcstas_rotation_now]
 
-        while np.arctan(point_now[1] / point_now[0]) > self.pol_minus:
+        while np.arctan2(point_now[1], point_now[0]) > self.pol_minus:
             segment_analyser = orientation_now * instr.an_seg
             point_now += segment_analyser  # update the next point
             orientation_now, mcstas_rotation_now = self._analyser_segment_orientation(point_now)
-            analyser_x.append(point_now[0])
-            analyser_y.append(point_now[1])
+            analyser = np.append(analyser, point_now.reshape((2, 1)), axis=1)
             mcstas_rotation_radian.append(mcstas_rotation_now)
-        return np.array(analyser_x), np.array(analyser_y), np.array(mcstas_rotation_radian)
+        return analyser, np.array(mcstas_rotation_radian)
 
-    def _intersect_on_ellipse(self, m):
+    def _intersect_on_ellipse(self, m, h, k, phi):
         # gives the intersect of a line y = mx, with the ellipse described by the parameters (aa, bb, cc, h, k)
-        aa, bb, cc, h, k = self._ellipse_points2parameters()
+        aa, bb, cc = self._ellipse_points2parameters(phi=phi)
         polynomial_parameters = np.empty(3)
         polynomial_parameters[0] = aa + bb * m + cc * m ** 2
         polynomial_parameters[1] = -2 * aa * h - bb * (m * h + k) - 2 * cc * m * k
@@ -144,76 +130,42 @@ class MushroomContext(object):
             raise RuntimeError("Too many values of the x-component have been found.")
         y = m * x
         if abs(aa * (x - h) ** 2 + bb * (x - h) * (y - k) + cc * (y - k) ** 2 - 1) < instr.ZERO_TOL:
-            return [x, y]
+            return np.array([x, y])
         else:
             raise RuntimeError("Something wrong when solving the ellipse edge points.")
 
-    def _generate_analyser_ellipse(self):
+    def _generate_analyser_ellipse(self, ellipse_h, ellipse_k, ellipse_phi):
         # generate the analyser as a part of an ideal ellipse
-        angles = np.linspace(self.pol_plus, self.pol_minus, num=self.elli_points)
-        analyser_x = []
-        analyser_y = []
-        for angle in angles:
-            slope = np.tan(angle)
-            x, y = self._intersect_on_ellipse(m=slope)
-            analyser_x.append(x)
-            analyser_y.append(y)
-        analyser_x = np.array(analyser_x)
-        analyser_y = np.array(analyser_y)
-
-        return np.array(analyser_x), np.array(analyser_y)
+        angles = np.linspace(self.pol_plus, self.pol_minus, num=ELLI_POINTS)
+        analyser = np.array(list(
+            map(lambda m: self._intersect_on_ellipse(m, h=ellipse_h, k=ellipse_k, phi=ellipse_phi), np.tan(angles))))
+        return np.transpose(analyser)
 
     def _detector_from_analyser(self):
-        def an_to_de(x, y):
-            line_af = geo.points_to_line(self.foc_point, [x, y])
+        def an_to_de(an_point):
+            line_af = geo.points_to_line(self.foc_point, an_point)
             detector_point = geo.lines_intersect(line1=line_af, line2=self.detector_line_hori)
-            if y < self.foc_point[1] or detector_point[0] + self.detector_line_vert[-1] < - instr.ZERO_TOL:
+            if detector_point[0] + self.detector_line_vert[-1] < - instr.ZERO_TOL:
                 detector_point = geo.lines_intersect(line1=line_af, line2=self.detector_line_vert)
                 if detector_point[1] + self.detector_line_hori[-1] < - instr.ZERO_TOL:
                     raise RuntimeError("Failed to find a detector point.")
-            return detector_point[0], detector_point[1]
+            return detector_point
 
-        detector_x = np.array(list(
-            map(lambda i: an_to_de(self.analyser_points[0][i], self.analyser_points[1][i])[0],
-                range(self.analyser_points[0].shape[0]))))
-        detector_y = np.array(list(
-            map(lambda i: an_to_de(self.analyser_points[0][i], self.analyser_points[1][i])[1],
-                range(self.analyser_points[0].shape[0]))))
-        detector_hori_x = detector_x[detector_x > -self.detector_line_vert[-1]]
-        detector_vert_y = detector_y[detector_y > -self.detector_line_hori[-1]]
-        if detector_x[0] * detector_x[-1] < 0:
+        detector = np.apply_along_axis(func1d=an_to_de, axis=0, arr=self.analyser_points)
+        detector_hori_x = detector[0, detector[0, :] > -self.detector_line_vert[-1]]
+        detector_vert_y = detector[1, detector[1, :] > -self.detector_line_vert[-1]]
+        if detector[0, 0] * detector[0, -1] < 0:
             raise RuntimeError("Detector points overlap.")
-        return detector_x, detector_y, detector_hori_x, detector_vert_y
+        return detector, detector_hori_x, detector_vert_y
 
-    def _wavenumbers_from_analyser(self):
-        kf = list(map(
-            lambda i: self.wavenumber_bragg(index=i), range(self.analyser_points[0].shape[0])))
-        return np.array(kf)
-
-    def wavelength_bragg(self, index, order_parameter=1):
-        # gives the wavelength from the Bragg's law
-        scattering_2theta = self._get_an_twotheta(an_ind=index)
-        return 2. * instr.lattice_distance_pg002 * np.sin(scattering_2theta / 2.) / float(order_parameter)
-
-    def wavenumber_bragg(self, index, order_parameter=1):
+    def _analyser2wavenumber(self, an_point, order_parameter=1):
         # gives the wave number from the Bragg's law
-        wavelength = self.wavelength_bragg(index=index,
-                                           order_parameter=order_parameter)
-        return 2. * np.pi / wavelength
+        scattering_2theta = self._analyser2twotheta(an_point=an_point)
+        return neutron.bragg_angle2wavenumber(twotheta=scattering_2theta, lattice_distance=instr.interplanar_pg002,
+                                              order=order_parameter)
 
-    def _get_an_twotheta(self, an_ind):
-        # gives the scattering angle twotheta from the given index of the analyser segment
-        an_point = (self.analyser_points[0][an_ind], self.analyser_points[1][an_ind])
-        vector_sa = geo.points_to_vector(self.sample_point, an_point)  # sa = sample_analyser
-        vector_af = geo.points_to_vector(an_point, self.foc_point)  # af = analyser_focus
+    def _analyser2twotheta(self, an_point):
+        # gives the scattering angle twotheta from the given analyser segment
+        vector_sa = geo.points2vector(self.sample_point, an_point)  # sa = sample_analyser
+        vector_af = geo.points2vector(an_point, self.foc_point)  # af = analyser_focus
         return geo.angle_vectors(vector_sa, vector_af)
-
-    def wavevector_transfer(self, index_pol, index_azi, rot_rad=0):
-        ki_vector = np.array([self.wavenumber_in, 0, 0])
-        kf = self.wavenumbers_out[index_pol]
-        pol_rad = self.pol_angles[index_pol]
-        azi_rad = self.azi_angles[index_azi]
-        kf_vector = neutron.wavenumber2wavevector(wavenumber=kf, azi_angle=azi_rad, pol_angle=pol_rad)
-        q_vector = ki_vector - kf_vector
-        q_vector[:2] = geo.rotation_around_z(rot_angle=rot_rad, old_x=q_vector[0], old_y=q_vector[1])
-        return q_vector

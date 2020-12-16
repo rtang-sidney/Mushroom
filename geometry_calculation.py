@@ -1,6 +1,9 @@
 import numpy as np
 
 ZERO_TOL = 1e-6
+UNIT_VECTOR_X = (1, 0, 0)
+UNIT_VECTOR_Y = (0, 1, 0)
+UNIT_VECTOR_Z = (0, 0, 1)
 
 
 def points_distance(point1, point2):
@@ -55,13 +58,9 @@ def points_to_line(point1, point2):
         return a, b, -1.0
 
 
-def points_to_vector(point1, point2):
+def points2vector(point1, point2):
     # gives the vector pointing from the point1 to point2 (direction important)
-    if isinstance(point1, np.ndarray) is False:
-        point1 = np.array(point1)
-    if isinstance(point2, np.ndarray) is False:
-        point2 = np.array(point2)
-    return point2 - point1
+    return np.array(point2) - np.array(point1)
 
 
 def parameters_to_line(slope, y_intersect=None):
@@ -103,7 +102,7 @@ def angle_triangle(a, c, b=None):
 
 
 def points_to_slope_radian(point1, point2):
-    vector12 = points_to_vector(point1=point1, point2=point2)
+    vector12 = points2vector(point1=point1, point2=point2)
     if abs(vector12[0]) > ZERO_TOL:
         return np.arctan(vector12[1] / vector12[0])
     else:
@@ -167,11 +166,17 @@ def dirac_delta_approx(x, x0, resol):
 
 
 def point2line_3d(point_out, line_direction, point_on):
-    point_vector = points_to_vector(point_out, point_on)
+    point_vector = points2vector(point_out, point_on)
     return np.linalg.norm(np.cross(point_vector, line_direction)) / np.linalg.norm(line_direction)
 
 
 def rotation_3d(vector, rot_axis, angle):
+    vector = np.array(vector)
+    rot_axis = np.array(rot_axis)
+    if vector.shape[0] != 3:
+        raise ValueError("The vector should be 3D, but it is given as {:d}D".format(vector.shape[0]))
+    if rot_axis.shape[0] != 3:
+        raise ValueError("The rotation axis should be 3D, but it is given as {:d}D".format(rot_axis.shape[0]))
     return rot_axis * np.dot(rot_axis, vector) + np.cos(angle) * np.cross(np.cross(rot_axis, vector),
                                                                           rot_axis) + np.sin(
         angle) * np.cross(rot_axis, vector)

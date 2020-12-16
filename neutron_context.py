@@ -45,10 +45,24 @@ def wavenumber2wavevector(wavenumber, azi_angle, pol_angle):
         [np.cos(pol_angle) * np.cos(azi_angle), np.cos(pol_angle) * np.sin(azi_angle), np.sin(pol_angle)])
 
 
-def bragg_wavenumber2angle(wavenumber, lattice_distance, ordering=1):
+def bragg_wavenumber2angle(wavenumber, lattice_distance, order=1):
     # returns the scattering angle 2theta according to the Bragg's law 2 * d * sin(theta) = n * lambda
-    return 2.0 * np.arcsin(ordering * np.pi / (wavenumber * lattice_distance))
+    return 2.0 * np.arcsin(order * np.pi / (wavenumber * lattice_distance))
+
+
+def bragg_angle2wavenumber(twotheta, lattice_distance, order=1):
+    return order * np.pi / (lattice_distance * np.sin(twotheta / 2.0))
+
+
+def wavevector_transfer(wavevector_out,wavevector_in):
+    wavevector_in = np.array(wavevector_in)
+    wavevector_out = np.array(wavevector_out)
+    return wavevector_in - wavevector_out
 
 
 def energy_transfer(wavenumber_in, wavenumber_out):
     return planck_constant ** 2 * (wavenumber_in ** 2 - wavenumber_out ** 2) / (2 * mass_neutron)
+
+
+def bragg_angle2wavelength(twotheta, lattice_distance, order=1):
+    return 2.0 * lattice_distance * np.sin(twotheta / 2.0) / float(order)

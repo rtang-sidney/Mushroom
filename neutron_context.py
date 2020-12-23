@@ -54,7 +54,7 @@ def bragg_angle2wavenumber(twotheta, lattice_distance, order=1):
     return order * np.pi / (lattice_distance * np.sin(twotheta / 2.0))
 
 
-def wavevector_transfer(wavevector_out,wavevector_in):
+def wavevector_transfer(wavevector_out, wavevector_in):
     wavevector_in = np.array(wavevector_in)
     wavevector_out = np.array(wavevector_out)
     return wavevector_in - wavevector_out

@@ -8,13 +8,14 @@ from mushroom_context import MushroomContext
 plt.rcParams.update({'font.size': 18})
 
 ZERO_TOL = 1e-6
-ENERGY_CUT_MONOCHROMATOR = "Monochromator"
-ENERGY_CUT_VELOCITY_SELECTOR = "VelocitySelector"
+TYPE_MONOCHROMATOR = "Monochromator"
+TYPE_VELOCITY_SELECTOR = "VelocitySelector"
 FILENAME_PREFIX = "Resolution_Primary_"
 FILENAME_MONOCHROMATOR = "Resolution_Primary_Monochromator.pdf"
 FILENAME_VELOCITY_SELECTOR = "Resolution_Primary_VelocitySelector.pdf"
 AXIS_AZIMUTHAL = "x"
 AXIS_POLAR = "y"
+PATH_RESOLUTION = "Resolution\\"
 
 """
 [Paper1]: Demmel2014 http://dx.doi.org/10.1016/j.nima.2014.09.019
@@ -85,23 +86,28 @@ def get_resolution_monochromator(ki):
     return dki, dtheta, dphi
 
 
-def get_resolution_components(ki, dki, dtheta, dphi):
+def resolution_primary(ki, comp_type):
     """
     recalculates the resolution and gives the components in x (horizontal), y (vertical) and z (along the ki) directions
     :param ki: wave number
-    :param dki: uncertainty of the wave number
-    :param dtheta: uncertainty of the azimuthal angle
-    :param dphi: uncertainty of the polar angle
+    :param comp_type: type of the component
     :return: all three components of the Q-resolution in the sequence of x, y, z
     """
-    dqx = ki * np.tan(dtheta)
-    dqy = ki * np.tan(dphi)
-    dqz = dki
+    if comp_type == TYPE_MONOCHROMATOR:
+        uncertain_ki, uncertain_theta, uncertain_phi = get_resolution_monochromator(ki=ki)
+    elif comp_type == TYPE_VELOCITY_SELECTOR:
+        uncertain_ki, uncertain_theta, uncertain_phi = resolution_v_selector(ki=ki)
+    else:
+        raise ValueError("Unknown component type.")
+    dqx = ki * np.tan(uncertain_theta)
+    dqy = ki * np.tan(uncertain_phi)
+    dqz = uncertain_ki
     return dqx, dqy, dqz
 
 
-def plot_resolution(ki, dqx, dqy, dqz, energy_selection):
-    filename = get_filename(energy_selection_type=energy_selection)
+def plot_resolution(ki, dqx, dqy, dqz, comp_type):
+    filename = get_filename(energy_selection_type=comp_type)
+    filename = "".join([PATH_RESOLUTION, filename])
     fig, ax = plt.subplots()
     ax.plot(ki * 1e-10, dqx * 1e-10, color="blue", label="x: horizontal")
     ax.plot(ki * 1e-10, dqy * 1e-10, color="red", label="y: vertical")
@@ -135,20 +141,13 @@ def resolution_v_selector(ki):
     return dki, dtheta, dphi
 
 
-# kf = GeometryContext(side="same").wavenumbers
-# wavelength_incoming = GeometryContext(side="same").wavenumbers * 1e-10  # m, wavelength
-wavenumber_in = MushroomContext().wavenumbers_out  # use the same possible outgoing wavenumbers
-
-uncertain_ki, uncertain_theta, uncertain_phi = get_resolution_monochromator(ki=wavenumber_in)
-uncertain_qx, uncertain_qy, uncertain_qz = get_resolution_components(ki=wavenumber_in, dki=uncertain_ki,
-                                                                     dtheta=uncertain_theta,
-                                                                     dphi=uncertain_phi)
-plot_resolution(ki=wavenumber_in, dqx=uncertain_qx, dqy=uncertain_qy, dqz=uncertain_qz,
-                energy_selection=ENERGY_CUT_MONOCHROMATOR)
-
-uncertain_ki, uncertain_theta, uncertain_phi = resolution_v_selector(ki=wavenumber_in)
-uncertain_qx, uncertain_qy, uncertain_qz = get_resolution_components(ki=wavenumber_in, dki=uncertain_ki,
-                                                                     dtheta=uncertain_theta,
-                                                                     dphi=uncertain_phi)
-plot_resolution(ki=wavenumber_in, dqx=uncertain_qx, dqy=uncertain_qy, dqz=uncertain_qz,
-                energy_selection=ENERGY_CUT_VELOCITY_SELECTOR)
+# # kf = GeometryContext(side="same").wavenumbers
+# # wavelength_incoming = GeometryContext(side="same").wavenumbers * 1e-10  # m, wavelength
+# wavenumber_in = MushroomContext().wavenumbers_out  # use the same possible outgoing wavenumbers
+#
+# uncertain_qx, uncertain_qy, uncertain_qz = resolution_primary(ki=wavenumber_in, comp_type=TYPE_MONOCHROMATOR)
+# plot_resolution(ki=wavenumber_in, dqx=uncertain_qx, dqy=uncertain_qy, dqz=uncertain_qz, comp_type=TYPE_MONOCHROMATOR)
+#
+# uncertain_qx, uncertain_qy, uncertain_qz = resolution_primary(ki=wavenumber_in, comp_type=TYPE_VELOCITY_SELECTOR)
+# plot_resolution(ki=wavenumber_in, dqx=uncertain_qx, dqy=uncertain_qy, dqz=uncertain_qz,
+#                 comp_type=TYPE_VELOCITY_SELECTOR)

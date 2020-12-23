@@ -156,13 +156,15 @@ def dirac_delta_approx(x, x0, resol):
     approximates the delta dirac function with a Gaussian function with expectation value of x0 and with the limit that
     the variance->0, where variance sigma = resol*x0
 
-    :param x: independet variable x
+    :param x: independent variable x
     :param x0: expectation value x0
-    :param resol: relative variance, giving the variance sigma = resol*x0
-    :return: approximated delta dirac funtion by Gaussian
+    :param resol: relative variance, giving the variance sigma = resol * x0
+    :return: approximated delta dirac function by Gaussian
     """
-    a = resol * x0
-    return np.exp(-((x - x0) / a) ** 2) / (abs(a) * np.sqrt(np.pi))
+    a = abs(resol * x0)
+    delta = np.exp(-((x - x0) / a) ** 2 / 2.0) / (a * np.sqrt(2 * np.pi))
+    # print(x, x0, resol, delta)
+    return delta
 
 
 def point2line_3d(point_out, line_direction, point_on):

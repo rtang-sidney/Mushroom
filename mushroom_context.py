@@ -34,9 +34,13 @@ class MushroomContext(object):
         self.filename_geo = "_".join(['Geometry', str(int(instr.angle_plus_deg)), "{:.2f}".format(distance_sf)])
         self.filename_res = "_".join(['Resolution', str(int(instr.angle_plus_deg)), "{:.2f}".format(distance_sf)])
 
-        self.analyser_points, self.mcstas_rotation_rad = self._generate_analyser_segments()
+        self.analyser_points, self.analyser_orients = self._generate_analyser_segments()
+
+        self.mcstas_segments = (self.analyser_points[:, 1:] + self.analyser_points[:, :-1]) / 2.0
+        self.mcstas_rotation_rad = np.arctan2(self.analyser_orients[1, :], self.analyser_orients[0, :])
         self.pol_angles = np.arctan2(self.analyser_points[1, :], self.analyser_points[0, :])
-        self.wavenumbers_out = np.apply_along_axis(func1d=self._analyser2wavenumber, axis=0, arr=self.analyser_points)
+        self.wavenumbers_out = np.apply_along_axis(func1d=self._analyser2wavenumber, axis=0,
+                                                   arr=self.analyser_points[:, :-1])
         self.an_2theta = np.apply_along_axis(func1d=self._analyser2twotheta, axis=0, arr=self.analyser_points)
         # print(self.wavenumbers)
         self.pol_middle_index = np.argmin(np.abs(self.pol_angles - self.pol_middle))
@@ -95,23 +99,32 @@ class MushroomContext(object):
         vector_sa = geo.points2vector(point1=self.sample_point, point2=analyser_point)
         vector_af = geo.points2vector(point1=analyser_point, point2=self.foc_point)
         vector_tangential = geo.vector_bisector(vector_sa, vector_af)
-        slope_rad = np.arctan(vector_tangential[1] / vector_tangential[0])
-        return geo.unit_vector(vector_tangential), slope_rad
+        return geo.unit_vector(vector_tangential)
 
     def _generate_analyser_segments(self):
+        '''
+        generate the segments of the analyser and their orientations
+        the number of segments is one larger than that of the orientations
+        :return: segments and orientations as arrays with sizes 2x(N+1) and 2xN, respectively
+        '''
         # generates the analyser with a finite segment size
-        point_now = np.array(self.start_point)
-        analyser = np.copy(point_now).reshape((2, 1))
-        orientation_now, mcstas_rotation_now = self._analyser_segment_orientation(point_now)
-        mcstas_rotation_radian = [mcstas_rotation_now]
+        segment_start_now = np.array(self.start_point)
+        segments_start = np.copy(segment_start_now).reshape((2, 1))
+        orient_now = self._analyser_segment_orientation(segment_start_now)
+        segments_orient = np.copy(orient_now).reshape((2, 1))
 
-        while np.arctan2(point_now[1], point_now[0]) > self.pol_minus:
-            segment_analyser = orientation_now * instr.an_seg
-            point_now += segment_analyser  # update the next point
-            orientation_now, mcstas_rotation_now = self._analyser_segment_orientation(point_now)
-            analyser = np.append(analyser, point_now.reshape((2, 1)), axis=1)
-            mcstas_rotation_radian.append(mcstas_rotation_now)
-        return analyser, np.array(mcstas_rotation_radian)
+        while np.arctan2(segment_start_now[1], segment_start_now[0]) > self.pol_minus:
+            # the end point is included, since the last point is the outside the threshold
+            segment_analyser = orient_now * instr.an_seg
+            segment_start_now += segment_analyser  # update the next point
+            orient_now = self._analyser_segment_orientation(segment_start_now)
+            segments_start = np.append(segments_start, segment_start_now.reshape((2, 1)), axis=1)
+            segments_orient = np.append(segments_orient, orient_now.reshape((2, 1)), axis=1)
+
+        segments_orient = segments_orient[:, :-1]  # the orientation of the endpoint is discharged
+        # the number of the analyser points is one larger than that of the segments, hence also one larger than that of
+        # the segment orientations
+        return segments_start, segments_orient
 
     def _intersect_on_ellipse(self, m, h, k, phi):
         # gives the intersect of a line y = mx, with the ellipse described by the parameters (aa, bb, cc, h, k)

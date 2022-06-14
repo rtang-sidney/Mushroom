@@ -1,7 +1,7 @@
 import numpy as np
 
 mass_neutron = 1.67492749804e-27  # kg
-planck_constant = 1.0545718e-34  # m2 kg / s, h-bar
+habr = 1.0545718e-34  # m2 kg / s, h-bar = h / (2*pi)
 conversion_joule_per_ev = 1.602176634e-19  # J / eV
 boltzmann = 1.380649e-23  # J / K
 factor_gamma = 1.913  # dimensionless constant
@@ -18,7 +18,7 @@ def wavenumber2wavelength(wavenumber):
 
 
 def wavenumber2energy(wavenumber):
-    return planck_constant ** 2 * wavenumber ** 2 / (2 * mass_neutron)
+    return habr ** 2 * wavenumber ** 2 / (2 * mass_neutron)
 
 
 def wavelength2energy(wavelength):
@@ -26,7 +26,7 @@ def wavelength2energy(wavelength):
 
 
 def energy2wavenumber(energy):
-    return np.sqrt(2 * mass_neutron * energy) / planck_constant
+    return np.sqrt(2 * mass_neutron * energy) / habr
 
 
 def energy2wavelength(energy):
@@ -35,6 +35,23 @@ def energy2wavelength(energy):
 
 def mev2joule(energy_mev):
     return energy_mev * 1e-3 * conversion_joule_per_ev
+
+
+def velocity2wavenumber(velocity):
+    return mass_neutron * velocity / habr
+
+
+def velocity2wavelength(velocity):
+    wavenumber = velocity2wavenumber(velocity)
+    return wavenumber2wavelength(wavenumber)
+
+
+def wavenumber2velocity(wavenumber):
+    return habr * wavenumber / mass_neutron
+
+
+def wavelength2velocity(wavelength):
+    return wavenumber2velocity(wavelength2wavenumber(wavelength))
 
 
 def joule2mev(energy_j):
@@ -46,12 +63,12 @@ def wavenumber2wavevector(wavenumber, azi_angle, pol_angle):
         [np.cos(pol_angle) * np.cos(azi_angle), np.cos(pol_angle) * np.sin(azi_angle), np.sin(pol_angle)])
 
 
-def bragg_wavenumber2angle(wavenumber, lattice_distance, order=1):
+def bragg_wavenumber2twotheta(wavenumber, lattice_distance, order=1):
     # returns the scattering angle 2theta according to the Bragg's law 2 * d * sin(theta) = n * lambda
     return 2.0 * np.arcsin(order * np.pi / (wavenumber * lattice_distance))
 
 
-def bragg_angle2wavenumber(twotheta, lattice_distance, order=1):
+def bragg_twotheta2wavenumber(twotheta, lattice_distance, order=1):
     return order * np.pi / (lattice_distance * np.sin(twotheta / 2.0))
 
 
@@ -62,8 +79,16 @@ def wavevector_transfer(wavevector_out, wavevector_in):
 
 
 def energy_transfer(wavenumber_in, wavenumber_out):
-    return planck_constant ** 2 * (wavenumber_in ** 2 - wavenumber_out ** 2) / (2 * mass_neutron)
+    return habr ** 2 * (wavenumber_in ** 2 - wavenumber_out ** 2) / (2 * mass_neutron)
 
 
-def bragg_angle2wavelength(twotheta, lattice_distance, order=1):
+def bragg_twotheta2wavelength(twotheta, lattice_distance, order=1):
     return 2.0 * lattice_distance * np.sin(twotheta / 2.0) / float(order)
+
+
+def q2rlu(q_value, l_const):
+    return q_value / (2.0 * np.pi / l_const)
+
+
+def rlu2q(rlu, l_const):
+    return np.array(rlu) * (2 * np.pi / l_const)

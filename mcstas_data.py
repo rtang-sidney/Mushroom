@@ -1,26 +1,25 @@
+import matplotlib.pyplot as plt
 import numpy as np
 import re
 import sys
-import neutron_context as neutron
+import neutron_context as nctx
 from global_context import comment_symbol
 from mushroom_context import MushroomContext
 import global_context as glb
 import geometry_calculation as geo
 
-np.set_printoptions(threshold=sys.maxsize, precision=2)
+# It is probably not in use any longer
+
+# np.set_printoptions(threshold=sys.maxsize, precision=2)
 
 FLAT = "flat"
-# VERTICAL = "vertical"
-# CYLINDER = "cyl"
 
 PSD_PREFIX = "psd"
 LD_PREFIX = "l"
 DATAFILE_EXTENSION = "dat"
 
 FOLDER = "250121"
-# PSDCYL_COMPONENT = "cyl_monitor_psd"
-PSDFLAT_COMPONENT = "psd_monitor"
-# PSDVERT_COMPONENT = "psd_monitor_vertical"
+PSDFLAT_COMPONENT = "psd_flat"
 LD_COMP = "l_monitor"
 
 PSDCYL_XVAR = "ra"
@@ -59,18 +58,17 @@ SCAN_FOLDER_PREFIX = "Angle"
 
 
 class PsdInformation:
-    def __init__(self, ki, sam_rot, angle, psd_form):
+    def __init__(self, ki, sa_ang, an_deg, psd_form):
         """
         initialise the object with the PSD information
         :param ki: incoming wavenumber
-        :param sam_rot: current sample rotation
-        :param angle: the scan angle that defines the folder storing the simulated data
+        :param sa_ang: current sample rotation
+        :param an_deg: the scan angle that defines the folder storing the simulated data
         :param psd_form: denotes which PSD is to be handled
         """
         mush_ctx = MushroomContext()
-        self.scan_angle = angle
-        folder = scan2folder(ki=ki, sa_deg=sam_rot, an_deg=self.scan_angle)
-        filepath = detector_filepath(detector_type=PSD_PREFIX, detector_form=psd_form, folder=folder)
+        subfold = scan2folder(ki, sa_ang, an_deg)
+        filepath = detector_filepath(detector_type=PSD_PREFIX, detector_form=psd_form, folder=subfold)
         f = open(file=filepath).readlines()
         keys = []
         contents = []
@@ -123,23 +121,10 @@ class PsdInformation:
             raise RuntimeError("Does not recognise the unit {}".format(self.metadata_dict[KEY_YUNIT]))
         return xaxis, yaxis
 
-    # def _get_psdcyl_middle(self):
-    #     return float(re.search(pattern=PATTERN_POSITION, string=self.metadata_dict[KEY_POSITION]).group(2))
-
     def _psd_signal_adjust(self, x, y, intensity, geo_ctx: MushroomContext):
         component = self.metadata_dict[KEY_COMPONENT]
-        # if component == PSDCYL_COMPONENT:
-        #     x = np.deg2rad(x)
-        #     y = y[y >= 0]
-        #     y = self._get_psdcyl_middle() + y
-        #     x, y = np.meshgrid(x, y)
-        # elif component == PSDVERT_COMPONENT:
-        #     x = np.arctan2(x, abs(geo_ctx.dete_bank_line[-1])) + np.deg2rad(self.scan_angle)
-        #     y = self._get_psdcyl_middle() + y
-        #     x, y = np.meshgrid(x, y)
         if component == PSDFLAT_COMPONENT:
             x, y = np.meshgrid(x, y)
-            # intensity = np.where(np.linalg.norm([x, y], axis=0) > 0.4, intensity, 0)
         else:
             raise RuntimeError("Cannot match the x variable {}.".format(self.metadata_dict[KEY_XVAR]))
         x, y = x.flatten(), y.flatten()
@@ -147,20 +132,18 @@ class PsdInformation:
         return x, y, intensity
 
 
+def ki2folder(ki):
+    return 'ki{:.1f}'.format(ki * 1e-10)
+
+
 def scan2folder(ki, sa_deg, an_deg):
-    ki_name = "{:.1f}".format(ki * 1e-10)
-    sa_name = "{:d}".format(sa_deg)
-    an_name = "{:d}".format(an_deg)
-    scanname = "_".join([SCAN_FOLDER_PREFIX, ki_name, sa_name, an_name])
-    folder = "/".join([FOLDER, scanname])
-    return folder
+    folder = ki2folder(ki)
+    subfold = '{:s}{}/sa{:d}_an{:d}'.format(glb.path_mcstas, folder, int(sa_deg), int(an_deg))
+    return subfold
 
 
 def detector_filepath(detector_type, detector_form, folder):
-    if detector_type == PSD_PREFIX:
-        filename = ".".join([detector_form, DATAFILE_EXTENSION])
-    else:
-        filename = ".".join(["_".join([detector_type, detector_form]), DATAFILE_EXTENSION])
+    filename = ".".join(["_".join([detector_type, detector_form]), DATAFILE_EXTENSION])
     filepath = "/".join([folder, filename])
     return filepath
 
@@ -194,8 +177,6 @@ def folder_name(instrument, day, month, year, hms):
 
 
 def position2dispersion(x, y, ki, psd_type, mush_ctx: MushroomContext):
-    # TODO: one can retrieve the kf-information by means of calculating the cut on the ellipse, or by finding the index
-    # of the respective PSD point and the search the respective kf-value. But: which one is better?
     """
     calculate the scattering variables from the PSD information
     :param x: x-axis of the psd file
@@ -207,186 +188,132 @@ def position2dispersion(x, y, ki, psd_type, mush_ctx: MushroomContext):
     energy transfer hbar * omega
     """
     if psd_type == FLAT:
-        radius = np.linalg.norm([x, y], axis=0)
-        azimuthal = np.arctan2(y, x)
-        # print(mush_ctx.dete_hori_x[::-1], radius)
-        index = mush_ctx.dete_points.shape[0] - np.searchsorted(mush_ctx.dete_points[::-1, 0], radius)
+        rad_1d = np.linalg.norm([x, y], axis=0)
+        azi_1d = np.arctan2(y, x)
+        indices = mush_ctx.dete_points.shape[0] - np.searchsorted(mush_ctx.dete_points[::-1, 0], rad_1d)
     else:
         raise RuntimeError("Cannot match the component {:s}.".format(psd_type))
     kf = mush_ctx.wavenumber_f
-    polar = mush_ctx.pol_angles[index]
-    kfx = kf * np.cos(polar) * np.cos(azimuthal)
-    kfy = kf * np.cos(polar) * np.sin(azimuthal)
-    kfz = kf * np.sin(polar)
-    # print(kfz)
+    pol_1d = mush_ctx.pol_angles[indices]
+    kfx = kf * np.cos(pol_1d) * np.cos(azi_1d)
+    kfy = kf * np.cos(pol_1d) * np.sin(azi_1d)
+    kfz = kf * np.sin(pol_1d)
     qx = ki - kfx
     qy = -kfy
     qz = -kfz
-    hw = neutron.planck_constant ** 2 / (2.0 * neutron.mass_neutron) * (ki ** 2 - kf ** 2)
-    return kf, qx, qy, qz, hw
-
-
-# def intensity_merge(angle, intensities_flat, intensities_vertical):  # intensities_cyl
-#     # intensities_cyl += PsdInformation(angle, FILE_PSD_CYL).intensities
-#     intensities_flat += PsdInformation(angle, FLAT).intensities
-#     intensities_vertical += PsdInformation(angle, VERTICAL).intensities
-#     # return intensities_cyl, intensities_flat, intensities_vertical
-#     return intensities_flat, intensities_vertical
-
-
-# def scatter_plot_colour(fig, ax, data_x, data_y, data_z, psd_type):
-#     if np.count_nonzero(data_z) > 0:
-#         cnt = ax.scatter(data_x, data_y, c=data_z)
-#         fig.colorbar(cnt, ax=ax)
-#     if psd_type == PSDCYL_COMPONENT or psd_type == PSDVERT_COMPONENT:
-#         xlabel = r"Azimuthal angle $\theta$ (deg)"
-#         ylabel = "Vertical position (m)"
-#     elif psd_type == PSD_COMPONENT:
-#         xlabel = "x position (m)"
-#         ylabel = "y position (m)"
-#         ax.set_title("Cartesian")
-#     else:
-#         raise RuntimeError("Invalid type of PSD given.")
-#     ax.set_xlabel(xlabel)
-#     ax.set_ylabel(ylabel)
-#     ax.grid()
-
-
-# def get_wavelength_signals(angles, detector_form):
-#     angle = angles[0]
-#     filepath = detector_filepath(detector_type=LAMBDA_DETECTOR_PREFIX, detector_form=detector_form,
-#                                  folder=scan2folder(angle))
-#     signals = np.loadtxt(fname=filepath, comments=COMMENT_SYMBOL)
-#     wavelengths = signals[:, 0] * 1e-10
-#     intentisities = signals[:, 1]
-#
-#     filepath = detector_filepath(detector_type=LAMBDA_DETECTOR_PREFIX, detector_form=detector_form,
-#                                  folder=scan2folder(-angle))
-#     signals = np.loadtxt(fname=filepath, comments=COMMENT_SYMBOL)
-#     intentisities += signals[:, 1]
-#
-#     for angle in angles[1:]:
-#         filepath = detector_filepath(detector_type=LAMBDA_DETECTOR_PREFIX, detector_form=detector_form,
-#                                      folder=scan2folder(angle))
-#         signals = np.loadtxt(fname=filepath, comments=COMMENT_SYMBOL)
-#         intentisities += signals[:, 1]
-#
-#         filepath = detector_filepath(detector_type=LAMBDA_DETECTOR_PREFIX, detector_form=detector_form,
-#                                      folder=scan2folder(-angle))
-#         signals = np.loadtxt(fname=filepath, comments=COMMENT_SYMBOL)
-#         intentisities += signals[:, 1]
-#     return wavelengths, intentisities
-
-
-# def plot_kf_monitor(ax, kf, intensity, title):
-#     """
-#     plot the distribution of the kf as a histogram
-#     :param ax: the current axes in the plot figure
-#     :param kf: wave numbers as a 1D array in m-1, has to be trasfered to AA-1
-#     :param intensity: intensities of the respective wave numbers
-#     :param title: title of the sub-plot
-#     :return: nothing. the function plots the sub-figure
-#     """
-#     kf_plot = kf * 1e-10  # change the wave number unit from m-1 to AA-1
-#     kmax = 2.1  # largest velue of the wave number can be achieved by the instrument
-#     kmin = 0.9  # smallest velue of the wave number can be achieved by the instrument
-#     kres = 0.01  # a reasonable resolution of the wave numbers
-#     ax.hist(kf_plot, bins=int((kmax - kmin) / kres), range=(kmin, kmax), weights=intensity)
-#     ax.grid()
-#     ax.set_title(title)
-#     ax.set_ylabel("Intensity")
+    return qx, qy, qz
 
 
 def merge_analysers(ki, sam_rot, psd_form):
     # merge the PSD data for different analyser arrays at the same sample rotation
-    angle = glb.mcstas_ana_angles[0]
-    psd = PsdInformation(ki=ki, sam_rot=sam_rot, angle=angle, psd_form=psd_form)
-    psd_x, psd_y, psd_intensity = psd.x_1d, psd.y_1d, psd.intensities
-    for angle in glb.mcstas_ana_angles[1:]:
-        psd_intensity += PsdInformation(ki=ki, sam_rot=sam_rot, angle=angle, psd_form=psd_form).intensities
-
-    # fig, ax = plt.subplots()
-    # scatter_plot_colour(fig=fig, ax=ax, data_x=psd_x, data_y=psd_y, data_z=psd_intensity, psd_type=PSD_COMPONENT)
-    # plt.suptitle(r"Total intensity at {:s} PSD, ki={:5.3f} $\AA$".format(psd_form, ki * 1e-10))
-    # plot_file = "_".join([FOLDER_DATE, "PSDCollection_{:s}.pdf".format(psd_form)])
-    # plt.savefig(plot_file, bbox_inches='tight')
-    # plt.close(fig)
-    # print("Plot saved: {:s}".format(plot_file))
+    psd_x, psd_y, psd_intensity = None, None, None
+    for i, an_ang in enumerate(an_angles):
+        an_ang = int(round(an_ang))
+        if i == 0:
+            psd = PsdInformation(ki=ki, sa_ang=sam_rot, an_deg=an_ang, psd_form=psd_form)
+            psd_x, psd_y, psd_intensity = psd.x_1d, psd.y_1d, psd.intensities
+        else:
+            psd_intensity += PsdInformation(ki=ki, sa_ang=sam_rot, an_deg=an_ang, psd_form=psd_form).intensities
     return psd_x, psd_y, psd_intensity
 
 
 def merge_sample(ki, mush_ctx: MushroomContext):
     def data_per_rot(sam_rot, ki, mush_ctx: MushroomContext):
-        flat_x, flat_y, flat_inten = merge_analysers(ki, sam_rot, FLAT)
-        # cyl_x, cyl_y, cyl_inten = merge_analysers(ki, sam_rot, CYLINDER)
-        flat_kf, flat_qx, flat_qy, flat_qz, flat_hw = position2dispersion(x=flat_x, y=flat_y, ki=ki, psd_type=FLAT,
-                                                                          mush_ctx=mush_ctx)
-        # print(flat_qz)
-        # cyl_kf, cyl_qx, cyl_qy, cyl_qz, cyl_hw = position2dispersion(x=cyl_x, y=cyl_y, ki=ki, psd_type=CYLINDER,
-        #                                                              mush_ctx=mush_ctx)
-        # kf_per_rot = np.append(flat_kf, cyl_kf)
-        flat_qvectors = np.array([flat_qx, flat_qy, flat_qz])
-        # print(flat_qx.shape, flat_qy.shape, flat_qz.shape, flat_qvectors.shape)
-        # cyl_qvectors = np.array([cyl_qx, cyl_qy, cyl_qz])
-        # qvectors_per_rot = np.append(flat_qvectors, cyl_qvectors, axis=1)
-        # print(qvectors_per_rot.shape)
-        qvectors_per_rot = np.apply_along_axis(func1d=geo.rotation_3d, axis=0, arr=qvectors_per_rot,
-                                               rot_axis=glb.sample_rot_axis, angle=-np.deg2rad(sam_rot))
-        hw_per_rot = np.append(flat_hw, cyl_hw)
-        return kf_per_rot, qvectors_per_rot, hw_per_rot
+        x, y, inten = merge_analysers(ki, sam_rot, FLAT)
+        qx, qy, qz = position2dispersion(x=x, y=y, ki=ki, psd_type=FLAT, mush_ctx=mush_ctx)
+        qvectors = np.array([qx, qy, qz])
+        return qvectors, inten
 
-    print("Sample rotation {:d} deg".format(0))
-    kf_per_ki, qvectors_per_ki, hw_per_ki = data_per_rot(sam_rot=0, ki=ki, mush_ctx=mush_ctx)
-    for sam_rot in range(glb.rotation_steps)[1:]:
-        print("Sample rotation {:d} deg".format(sam_rot))
-        kf_now, qvectors_now, hw_now = data_per_rot(sam_rot=sam_rot, ki=ki, mush_ctx=mush_ctx)
-        kf_per_ki = np.append(kf_per_ki, kf_now)
-        qvectors_per_ki = np.append(qvectors_per_ki, qvectors_now, axis=1)
-        hw_per_ki = np.append(hw_per_ki, hw_now)
-    return kf_per_ki, qvectors_per_ki, hw_per_ki
-
-
-# def plot_dispersion(mushroom: MushroomContext, psd_form, psd_x, psd_y, psd_intensity, ki):
-#     kf, qx, qy, qz, e_transfer = np.array(list(map(
-#         lambda i: position2dispersion(x=psd_x[i], y=psd_y[i], psd_type=psd_form,
-#                                       geo_ctx=psd_intensity, ki=ki), range(psd_x.shape[0]))))
-#
-#     fig, ax = plt.subplots()
-#     scatter_plot_colour(fig=fig, ax=ax, data_x=qx, data_y=qy, data_z=e_transfer, psd_type=PSD_COMPONENT)
-#     plt.suptitle(r"Dispersion from {:s} PSD, ki={:5.3f} $\AA$".format(psd_form, ki * 1e-10))
-#     plot_file = "_".join([FOLDER_DATE, "Dispersion_{:s}.pdf".format(psd_form)])
-#     plt.savefig(plot_file, bbox_inches='tight')
-#     plt.close(fig)
-#     print("Plot saved: {:s}".format(plot_file))
-
-
-# def wavenumber_plot(mushroom: MushroomContext, angles, wavenumber_psd, intensity_psd, ki):
-#     wavelength_l, intensity_lvertical = get_wavelength_signals(angles=angles, detector_form=VERTICAL)
-#     intensity_lflat = get_wavelength_signals(angles=angles, detector_form=VERTICAL)[-1]
-#     wavenumber_l = 2.0 * np.pi / wavelength_l
-#     intensity_l = intensity_lvertical + intensity_lflat
-#
-#     fig, axs = plt.subplots(2, 1, sharex="all")
-#     titles = ["lambda monitor", "psd"]
-#     wavenumbers = [wavenumber_l, wavenumber_psd.flatten()]
-#     intensity_psd = [intensity_l, intensity_psd.flatten()]
-#     for i in range(axs.ravel().shape[0]):
-#         plot_kf_monitor(axs[i], wavenumbers[i], intensity_psd[i], titles[i])
-#     axs[-1].set_xlabel(r"$k_f$ ($\AA^{-1}$)")
-#     fig.suptitle("Wavenumber distribution at ki={:5.3f}".format(ki * 1e-10))
-#     plot_file = "_".join([FOLDER_DATE, "Wavenumber_distribution.pdf"])
-#     plt.savefig(plot_file, bbox_inches='tight')
-#     plt.close(fig)
-#     print("Plot saved: {:s}".format(plot_file))
+    qvectors_per_ki, inten_per_ki = None, None
+    for i, sa_ang in enumerate(sa_angles):
+        sa_ang = int(round(sa_ang))
+        print("Sample {:d} deg".format(sa_ang))
+        if i == 0:
+            qvectors_per_ki, inten_per_ki = data_per_rot(sa_ang, ki=ki, mush_ctx=mush_ctx)
+        else:
+            qvectors_now, inten_now = data_per_rot(sa_ang, ki=ki, mush_ctx=mush_ctx)
+            qvectors_per_ki = np.append(qvectors_per_ki, qvectors_now, axis=1)
+            inten_per_ki = np.append(inten_per_ki, inten_now)
+    inidices_finite_inten = inten_per_ki > 0
+    qvectors_per_ki = qvectors_per_ki[:, inidices_finite_inten]
+    inten_per_ki = inten_per_ki[inidices_finite_inten]
+    return qvectors_per_ki, inten_per_ki
 
 
 def write_dispersion(ki, mush_ctx: MushroomContext):
-    kf, q_vectors, hw = merge_sample(ki=ki, mush_ctx=mush_ctx)
-    glb.write_dispersion(prefix=glb.prefix_mcstas, ki=ki, q_vectors=q_vectors, mush_hw=hw)
+    q_vectors, intensities = merge_sample(ki=ki, mush_ctx=mush_ctx)
+    glb.write_dispersion(prefix=glb.prefix_mcstas, ki=ki, q_vectors=q_vectors, intensities=intensities, order=1)
 
 
+def qrluxi(point, points, hkl):
+    point = np.array(point)
+    hkl = np.array(hkl)
+    for i, x in enumerate(hkl):
+        x = int(round(x))
+        if x != 0:
+            return (points[i, :] - point[i]) / float(x)
+
+
+def select_points(points, vec1, vec2, point_on, resol=0.01):
+    distance_point2plane = np.apply_along_axis(func1d=geo.point2plane, axis=0, arr=points, vec1=vec1, vec2=vec2,
+                                               point_on=point_on)
+    accepted_index = distance_point2plane < resol
+    return accepted_index
+
+
+def plot_plane(ki, vec1, vec2, point_on):
+    """
+    plot the simulated data on the Q vector grid generated by two directions. The plots are collected as an animation
+    along the energy axis, which depends on the ki values
+    :param vec1: vector1 defining the 1st direction
+    :param vec2: vector2 defining the 1st direction
+    :param point_on:
+    :return: nothing
+    """
+    print("Step: ki{}, vec1{}, vec2{}, point on-plane{}".format(ki * 1e-10, vec1, vec2, point_on))
+    vec1 = np.array(vec1)
+    vec2 = np.array(vec2)
+    point_on = np.array(point_on)
+    fname = glb.fname_write_dispersion(prefix=glb.prefix_mcstas, ki=ki, order=1, path=glb.path_mcstas)
+    data = np.loadtxt(fname, delimiter=",").transpose()
+    q_vectors = data[:-1, :]
+    intensities = data[-1, :]
+    hw = nctx.wavenumber2energy(ki) - nctx.wavenumber2energy(mushroomctx.wavenumber_f)
+    q_rlu = nctx.q2rlu(q_value=q_vectors, l_const=latt_const)
+    select_indices = select_points(q_rlu, vec1, vec2, point_on)
+    q_plot = q_rlu[:, select_indices]
+    if q_plot is None or q_plot.shape[1] == 0:
+        fig, ax = plt.subplots()
+        fig.savefig("{}IntensityPlane_{:.1f}.png".format(glb.path_mcstas, ki * 1e-10), bbox_inches='tight')
+        plt.close(fig)
+        return
+    inten_plot = intensities[select_indices]
+
+    # xi1 = qrluxi(point=point_on, points=q_rlu, hkl=vec1)
+    # xi2 = qrluxi(point=point_on, points=q_rlu, hkl=vec2)
+    xi1 = np.apply_along_axis(np.dot, axis=0, arr=q_plot, b=vec1)
+    xi2 = np.apply_along_axis(np.dot, axis=0, arr=q_plot, b=vec2)
+
+    fig, ax = plt.subplots()
+    cnt = ax.scatter(xi1, xi2, c=inten_plot)
+    cbar = fig.colorbar(cnt)
+    cbar.set_label("Intensity")
+    ax.set_xlabel("{}, {}, {}".format(*vec1))
+    ax.set_ylabel("{}, {}, {}".format(*vec2))
+    ax.set_title("Energy transfer{:.1f}".format(nctx.joule2mev(hw)))
+    ax.tick_params(axis="both", direction="in")
+    fig.savefig("{}IntensityPlane_{:.1f}.png".format(glb.path_mcstas, ki * 1e-10), bbox_inches='tight')
+    plt.close(fig)
+
+
+latt_const = 4.5 * 1e-10
 mushroomctx = MushroomContext()
-# for ki in glb.wavenumbers_in:
-#     write_dispersion(ki, mush_ctx=mushroomctx)
-ki = 1.5e10
-write_dispersion(ki, mush_ctx=mushroomctx)
+ki_values = np.linspace(1.2, 1.6, num=5) * 1e10
+sa_angles = np.linspace(0, 90, num=10)
+an_angles = np.linspace(10, 170, num=17)
+direction1 = (1, 1, 0)
+direction2 = (0, 0, 1)
+point_onplane = (1, 0, 0)
+for ki in ki_values:
+    # write_dispersion(ki, mush_ctx=mushroomctx)
+    plot_plane(ki, vec1=direction1, vec2=direction2, point_on=point_onplane)

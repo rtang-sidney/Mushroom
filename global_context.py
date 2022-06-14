@@ -1,7 +1,5 @@
 import numpy as np
 
-plot_correlation = "CorrelationFunction"
-
 extension_pdf = "pdf"
 extension_png = "png"
 extension_dat = "dat"
@@ -35,6 +33,6 @@ wavenumbers_in = np.linspace(wavenumber_in_min, wavenumber_in_max, num=5)
 
 filenames_ki = []
 for ki in wavenumbers_in:
-    name = "Mushroom_ki{:.3f}_Rot({:d}{:d}{:d}){:d}".format(ki * 1e-10, *sample_rot_axis, rotation_steps)
+    name = "Mushroom_ki{:.1f}_Rot({:d}{:d}{:d}){:d}".format(ki * 1e-10, *sample_rot_axis, rotation_steps)
     name = ".".join([name, extension_dat])
     filenames_ki.append(name)

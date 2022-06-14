@@ -6,6 +6,7 @@ conversion_joule_per_ev = 1.602176634e-19  # J / eV
 boltzmann = 1.380649e-23  # J / K
 factor_gamma = 1.913  # dimensionless constant
 thomson_length = 2.818e-15  # m, classical radius of electrons
+bohr_magneton = 9.274009994e-24  # J / T, Bohr magneton \mu_B
 
 
 def wavelength2wavenumber(wavelength):

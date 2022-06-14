@@ -10,19 +10,20 @@ from mushroom_context import MushroomContext
 
 plt.rcParams.update({'font.size': 18})
 
-FOLDER_MUSH = "McStas/Mushroom_SourceHZB_array_20220114_133040"
-FOLDER_NEAT = "McStas/HZB_NEAT_20220118_185751"
-FOLDER_MUSH_TOF_HZB = "McStas/Mushroom_TOFHZB_20220119_104234"
+# FOLDER_MUSH = "McStas/Mushroom_IN5_20220119_233024"
+FOLDER_MUSH = "McStas/MushroomFoc_IN5_20220428_221948"
+FOLDER_IN5 = "McStas/ILL_IN5_20220120_123756"
+FOLDER_MUSH_TOF = "McStas/Mushroom_TOF_20220428_210107"
 
 INSTR_MUSH_MONO = "Mushroom Mono"
 INSTR_MUSH_TOF = "Mushroom TOF"
-INSTR_NEAT = "NEAT"
+INSTR_IN5 = "IN5"
 
 MONITOR_PREFIX_PSD = "psd"
 LD_PREFIX = "l"
 DATA_EXTENSION = "dat"
 FORM_FLAT = "flat"
-FORM_NEAT = "y"
+FORM_TOFY = "y"
 FORM_TOF = "tof"
 PSD_XVAR = "X"
 PSD_YVAR = "Y"
@@ -52,6 +53,7 @@ KEY_YPOS = "pos_y"
 KEY_ZPOS = "pos_z"
 KEY_ERRORS = "Errors"
 KEY_VALUES = "values"
+KEY_RPM = "speed"
 REVEVANT_KEYS = [KEY_INSTR_PARAM, KEY_SIZE, KEY_XVAR, KEY_YVAR, KEY_XLABEL, KEY_YLABEL, KEY_XYLIMITS, KEY_POSITION,
                  KEY_COMPONENT]
 
@@ -60,14 +62,16 @@ UNIT_METRE = "m"
 UNIT_DEG = "deg"
 UNIT_S = "s"
 
-KI_NEAT = 1.1e10  # the incoming ki at NEAT is already selected by the chopper
-NEAT_PRIMARY = 11.97 + 2.143 + 0.165  # flight path of NEAT primary spectrometer
+KI_TOF = 1.1e10  # the incoming ki at NEAT is already selected by the chopper
 
-TBIN_MIN = 23800  # mu-s, the lower bound of the time bins
-TBIN_MAX = 24500  # mu-s, the upper bound of the time bins
-TBIN_NUMBER = 70  # number of bins used
+# TBIN_MIN = 0.025207 * 0.95  # mu-s, the lower bound of the time bins
+# TBIN_MAX = 0.025492 / 0.95  # mu-s, the upper bound of the time bins
+# TBIN_NUMBER = 10  # number of bins used
+TBIN_MIN = 25000 * 1e-6  # mu-s, the lower bound of the time bins
+TBIN_MAX = 25700 * 1e-6  # mu-s, the upper bound of the time bins
+TBIN_NUMBER = 140  # number of bins used
 TBINS = np.linspace(TBIN_MIN, TBIN_MAX, TBIN_NUMBER, endpoint=False)
-DISTANCE_CS = 14.278  # chopper-sample distance
+DISTANCE_CS = 15.1089  # chopper-sample distance
 
 WAVENUMBER_INCOMING = "ki"
 PATTERN_SIZE = re.compile(r"([0-9]*),\s?([0-9]*)")
@@ -76,7 +80,7 @@ PATTERN_XYLIMITS = re.compile(
 PATTERN_POSITION = re.compile(r"\s*([-+]?[0-9]*\.?[0-9]*)\s([-+]?[0-9]*\.?[0-9]*)\s([-+]?[0-9]*\.?[0-9]*)")
 PATTERN_PARAM = re.compile(r"\s*(\S*_?\S*)=([-+]?[0-9]*\.?[0-9]*)")
 PATTERN_LABEL = re.compile(r"\s*(\S*\s*\S*)\s*\[(\S*)]")
-PATTERN_VALUES = re.compile(r"#\s*values:\s*([0-9]*.[0-9]*)\s*([0-9]*.[0-9]*)\s*[0-9]*.[0-9]*")
+PATTERN_VALUES = re.compile(r"#\s*values:\s*([0-9]*.?[0-9]*)\s([0-9]*.?[0-9]*)\s[0-9]*.?[0-9]*")
 
 
 class MonitorInformation:
@@ -144,27 +148,60 @@ class MonitorInformation:
         return xaxis, yaxis
 
 
-def neat_detector(scan_folder):
+def in5_primary_calc():
+    L_gap = 0.2130  # gap VTE+OT-H16
+    L_Guide1 = 5  # for gerade Guide1
+    L_Guide21 = 0.6950  # for gerade Guide21
+    L_Guide22 = 0.1300  # for gerade Guide22
+    L_Guide23 = 0.69500  # for gerade Guide23
+    disk_gap = 0.02  # full gap at choppers
+    L_Guide3 = 5.5125  # for gerade Guide3
+    L_Guide41 = 0.7425  # for gerade Guide41
+    L_Guide42 = 0.0350  # for gerade Guide42
+    L_Guide43 = 0.7500  # for gerade Guide43
+    L_Guide44 = 0.0350  # for gerade Guide44
+    L_Guide45 = 0.7900  # for gerade Guide45
+    mono_gap = 0.0300  # gap for the 1st monitor
+    L_Collimator = 0.1300  # for gerade Collimator
+    L_CollSample = 0.2400 - 0.025  # the sample chamber size & keep
+    Ch_Ltot = np.empty(7)
+    Ch_Ltot[0] = 0
+    Ch_Ltot[1] = L_gap + L_Guide1 + 0.0003 + L_Guide21 + disk_gap / 2.0
+    Ch_Ltot[2] = Ch_Ltot[1] + disk_gap + L_Guide22
+    Ch_Ltot[3] = Ch_Ltot[2] + disk_gap + L_Guide23 + L_Guide3 + L_Guide41 + 2 * 0.0003
+    Ch_Ltot[4] = Ch_Ltot[3] + disk_gap + L_Guide42
+    Ch_Ltot[5] = Ch_Ltot[4] + disk_gap + L_Guide43
+    Ch_Ltot[6] = Ch_Ltot[5] + disk_gap + L_Guide44
+
+    Ltot = Ch_Ltot[6] + L_Guide45 + mono_gap + L_Collimator + L_CollSample + 0.025
+    print(Ch_Ltot[6], Ltot)
+    return Ltot
+
+
+def in5_tofy_detector(scan_folder):
     """
     gives the information of the neutron beam in the given scan
     :param scan_folder: the directory of the whole scan
     :return: wavelengths (lambda_1d) of the neuron beam, intensities (inten_1d), and errors (error_1d)
     """
-    tof_file = detector_filepath(detector_type=MONITOR_PREFIX_TOF, detector_form=FORM_NEAT, folder=scan_folder)
-    tof_neat = MonitorInformation(filepath=tof_file)
-    y_1d, tof_1d, inten_2d, error_2d = tof_neat.x_1d, tof_neat.y_1d, tof_neat.inten_2d, tof_neat.inten_errors
+    tof_file = detector_filepath(detector_type=MONITOR_PREFIX_TOF, detector_form=FORM_TOFY, folder=scan_folder)
+    tof = MonitorInformation(filepath=tof_file)
+    rpm_in5 = int(float(tof.metadata_dict[KEY_RPM]))
+    # print("total inten of tof y", np.sum(tof.inten_2d))
+    y_1d, tof_1d, inten_2d, error_2d = tof.x_1d, tof.y_1d, tof.inten_2d, tof.inten_errors
     y_2d, tof_2d = np.meshgrid(y_1d, tof_1d)
     # inten_1d = np.sum(inten_2d, axis=1)
     # error_1d = np.sqrt(np.sum(error_2d ** 2, axis=1))
-    radius_detector = 2.5  # m, distance from the tof-detector to the chopper
+    radius_detector = 4  # m, distance from the tof-detector to the chopper
     distance = np.linalg.norm([y_2d, radius_detector])
-    time_cs = NEAT_PRIMARY / nctx.wavenumber2velocity(KI_NEAT)
+    time_cs = (in5_primary - (5 - 4.39)) / nctx.wavenumber2velocity(
+        KI_TOF)  # the distance between chopper 0 and 1 was 4.39 at in5
     time_sd = tof_2d - time_cs
     v_2d = distance / time_sd
     # print(velocity)
     lambda_2d = nctx.velocity2wavelength(v_2d)
     # print(wavelength * 1e10)
-    return lambda_2d.flatten(), inten_2d.flatten(), error_2d.flatten()
+    return lambda_2d.flatten(), inten_2d.flatten(), error_2d.flatten(), rpm_in5
 
 
 def psd_tof_monitor(mush_ctx: MushroomContext, scan_folder):
@@ -173,12 +210,14 @@ def psd_tof_monitor(mush_ctx: MushroomContext, scan_folder):
         d_sd = distance_sd(mush_ctx, psd_bank_index)  # sample-detector distance
         d_cd = DISTANCE_CS + d_sd  # chopper-detector distance
         velocity_cd = d_cd / tof  # only in elastic case
+        print("velocity cd", velocity_cd)
         wavelength_cd = nctx.velocity2wavelength(velocity_cd)
         return wavelength_cd  # plot_intensity, plot_error
 
     def distance_sd(mush_ctx: MushroomContext, index):
         distance_sa = geo.points_distance(point1=mush_ctx.sa_point, point2=mush_ctx.an_points[:, index])
-        distance_ad = geo.points_distance(point1=mush_ctx.an_points[:, index], point2=mush_ctx.dete_points[:, index])
+        distance_ad = geo.points_distance(point1=mush_ctx.an_points[:, index],
+                                          point2=[mush_ctx.dete_points[0, index], -1.24])
         distance_sd = distance_sa + distance_ad
         return distance_sd
 
@@ -190,8 +229,9 @@ def psd_tof_monitor(mush_ctx: MushroomContext, scan_folder):
     plot_error = np.empty(0)
 
     for slice, tbin in enumerate(TBINS):
-        tof = tbin * 1e-6
-        filepath = detector_filepath(detector_type=MONITOR_PREFIX_PSD, detector_form="_".join([FORM_TOF, str(slice)]),
+        tof = tbin  # * 1e-6
+        filepath = detector_filepath(detector_type=MONITOR_PREFIX_PSD,
+                                     detector_form="_".join([FORM_TOF + "_monitor", str(slice)]),
                                      folder=scan_folder)
         # print(filepath)
         psd_tof = MonitorInformation(filepath=filepath)
@@ -220,17 +260,20 @@ def detector_filepath(detector_type, detector_form, folder):
     return filepath
 
 
-def neat_inten_adjsut(scan_folder):
-    inten_psd, err_psd = neat_intensity(scan_folder, form=FORM_NEAT)
-    lambda_tof, inten_tof, error_tof = neat_detector(scan_folder)
+def in5_inten_adjsut(scan_folder):
+    inten_psd, err_psd = in5_intensity(scan_folder, form=FORM_TOFY)
+    # print("psd inten", inten_psd)
+    lambda_tof, inten_tof, error_tof, rpm_in5 = in5_tofy_detector(scan_folder)
+    print("lambda in5", lambda_tof)
+    print("psd inten", inten_psd, "tof inten", inten_tof)
     total_inten_tof = np.sum(inten_tof)
     total_err_tof = np.sum(error_tof)
     inten_tof *= inten_psd / total_inten_tof
     error_tof *= err_psd / total_err_tof
-    return lambda_tof, inten_tof, error_tof
+    return lambda_tof, inten_tof, error_tof, rpm_in5
 
 
-def neat_intensity(scan_folder, form=FORM_NEAT):
+def in5_intensity(scan_folder, form=FORM_TOFY):
     psd_name = detector_filepath(detector_type=MONITOR_PREFIX_TOF, detector_form=form, folder=scan_folder)
     lines = open(file=psd_name).readlines()
     inten, error = None, None
@@ -272,7 +315,7 @@ def fwhm_gaussian(sigma):
 def plot_instrument(instr_name, wavelengths, intens, errs):
     def integrate_inten(instr_name, wavelengths_eff, intens_eff):
         if instr_name == INSTR_MUSH_TOF:
-            l_sa, inten_sa, err_sa = l_intensity(FOLDER_MUSH_TOF_HZB, form="sa")
+            l_sa, inten_sa, err_sa = l_intensity(FOLDER_MUSH_TOF, form="sa")
             l_nonzero_inten = wavelengths_eff[np.nonzero(intens_eff)]
             measured_indices = np.where(np.logical_and(l_sa > np.min(l_nonzero_inten), l_sa < np.max(l_nonzero_inten)))[
                 0]
@@ -285,10 +328,19 @@ def plot_instrument(instr_name, wavelengths, intens, errs):
     eff_indices = np.where(np.logical_and(wavelengths > PLOT_LAMBDA_MIN, wavelengths < PLOT_LAMBDA_MAX))[0]
     wavelengths_eff = wavelengths[eff_indices]
     intens_eff = intens[eff_indices]
+    print("eff indices of", instr_name, eff_indices, "total inten", np.sum(intens_eff))
     errs_eff = errs[eff_indices]
-    std = std_weighted(wavelengths_eff, intens_eff)
+    if np.count_nonzero(intens_eff) == 1:
+        std = 0.050e-10 / 2.0 / (2.0 * np.sqrt(2 * np.log(2)))
+    else:
+        std = std_weighted(wavelengths_eff, intens_eff)
+        if np.isnan(std):
+            print("eff lambda", wavelengths_eff, "eff inten", intens_eff)
+            raise ValueError("No intensity in the instrument files: {}".format(instr_name))
+        else:
+            print("std", std)
     fwhm = fwhm_gaussian(std)
-    stepsize = std
+    stepsize = std * 1.5
     plot_lambda_bins = int(round((PLOT_LAMBDA_MAX - PLOT_LAMBDA_MIN) / stepsize)) + 1
     if plot_lambda_bins % 2 == 0:
         plot_lambda_bins += 1
@@ -297,20 +349,30 @@ def plot_instrument(instr_name, wavelengths, intens, errs):
     plot_lambda = np.linspace(PLOT_LAMBDA_MIN, PLOT_LAMBDA_MAX, plot_lambda_bins)
     plot_inten = np.histogram(wavelengths_eff, bins=plot_lambda, weights=intens_eff)[0]
     plot_err = np.histogram(wavelengths_eff, bins=plot_lambda, weights=errs_eff)[0]
-    ax.errorbar(plot_lambda[:-1] * 1e10, plot_inten / np.max(plot_inten), yerr=plot_err / np.max(plot_inten), fmt='o-',
+    if instr_name == INSTR_IN5:
+        instr_name += ", rpm={:d}".format(rpm_in5)
+    ax.errorbar(plot_lambda[:-1] * 1e10, plot_inten, yerr=plot_err, fmt='o-',
                 label="{:s}\n".format(instr_name) + r"$I=$" + "{:.1e}\n".format(
                     np.sum(intens_eff)) + r"$\mathrm{FWHM}=$" + "{:.3f}".format(fwhm * 1e10) + r"$\AA$")
+    # / np.max(plot_inten) / np.max(plot_inten)
     if instr_name == INSTR_MUSH_TOF:
         return integrate_inten(instr_name, wavelengths_eff, intens_eff)
     else:
         pass
 
 
+in5_primary = in5_primary_calc()  # flight path of NEAT primary spectrometer
+in5_distance_sd = 4.0
+
 mush_ctx = MushroomContext()
 L_MIDDLE = mush_ctx.wavelength_f
-L_MARGIN = 0.2e-10
+L_MARGIN = 0.5e-10
 PLOT_LAMBDA_MIN = L_MIDDLE - L_MARGIN
 PLOT_LAMBDA_MAX = L_MIDDLE + L_MARGIN
+tof_min = (in5_primary + in5_distance_sd) / nctx.wavelength2velocity(PLOT_LAMBDA_MIN)
+tof_max = (in5_primary + in5_distance_sd) / nctx.wavelength2velocity(PLOT_LAMBDA_MAX)
+tof_mid = (in5_primary + in5_distance_sd) / nctx.wavelength2velocity(L_MIDDLE)
+print("tof_min = {:.4f} s, tof_max = {:.4f} s, tof_mid = {:.4} s".format(tof_min, tof_max, tof_mid))
 
 fig, ax = plt.subplots()
 path_mush = FOLDER_MUSH
@@ -319,25 +381,27 @@ intensities_mush *= 161 * 2
 errors_mush *= np.sqrt(161 * 2)
 plot_instrument(instr_name=INSTR_MUSH_MONO, wavelengths=wavelengths_mush, intens=intensities_mush, errs=errors_mush)
 
-path_mush_tofhzb = FOLDER_MUSH_TOF_HZB
-wavelengths_tofhzb, intensities_tofhzb, errors_tofhzb = psd_tof_monitor(mush_ctx=mush_ctx, scan_folder=path_mush_tofhzb)
-intensities_tofhzb *= 161 * 2
-errors_tofhzb *= np.sqrt(161 * 2)
-integrated_inten = plot_instrument(instr_name=INSTR_MUSH_TOF, wavelengths=wavelengths_tofhzb, intens=intensities_tofhzb,
-                                   errs=errors_tofhzb)
+path_mush_tof = FOLDER_MUSH_TOF
+wavelengths_tof, intensities_tof, errors_tof = psd_tof_monitor(mush_ctx=mush_ctx, scan_folder=path_mush_tof)
+# print(wavelengths_tof)
+# print("TOF Mush intensity", intensities_tof)
+intensities_tof *= 161 * 2
+errors_tof *= np.sqrt(161 * 2)
+integrated_inten = plot_instrument(instr_name=INSTR_MUSH_TOF, wavelengths=wavelengths_tof, intens=intensities_tof,
+                                   errs=errors_tof)
 print(integrated_inten)
 
-path_neat = FOLDER_NEAT
-wavelengths_neat, intensities_neat, errors_neat = neat_inten_adjsut(scan_folder=path_neat)
-plot_instrument(instr_name=INSTR_NEAT, wavelengths=wavelengths_neat, intens=intensities_neat, errs=errors_neat)
+path_in5 = FOLDER_IN5
+wavelengths_neat, intensities_neat, errors_neat, rpm_in5 = in5_inten_adjsut(scan_folder=path_in5)
+plot_instrument(instr_name=INSTR_IN5, wavelengths=wavelengths_neat, intens=intensities_neat, errs=errors_neat)
 
 ax.legend(loc='upper left', bbox_to_anchor=(1, 1))
 ax.set_title(r"$k_{i}=$" + "{:.3f}".format(
     mush_ctx.wavenumber_f * 1e-10) + r" $\AA^{-1}$,   " + r"$\lambda_{i}=$" + "{:.3f}".format(
     mush_ctx.wavelength_f * 1e10) + r" $\AA$")
 ax.set_xlabel(r"Wavelength ($\AA$)")
-ax.set_ylabel("Intensity (peak normalised to 1)")
+ax.set_ylabel("Intensity at the detector")
 ax.tick_params(axis="both", direction="in")
 ax.set_xlim(PLOT_LAMBDA_MIN * 1e10, PLOT_LAMBDA_MAX * 1e10)
-fig.savefig("Mushroom_CountRate.png", bbox_inches='tight')
+fig.savefig("Performance\\Mushroom_IN5.png", bbox_inches='tight')
 plt.close(fig)

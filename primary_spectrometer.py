@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 import instrument_context
-import neutron_context as neutron
+import neutron_context as nctx
 import instrument_context as instr
 import geometry_calculation as geo
 import global_context as glb
@@ -64,7 +64,7 @@ def resolution_mono(ki):
 
     def monochromator_twotheta():
         nonlocal ki
-        return neutron.bragg_wavenumber2twotheta(wavenumber=ki, lattice_distance=instr.interplanar_pg002)
+        return nctx.bragg_wavenumber2twotheta(wavenumber=ki, lattice_distance=instr.interplanar_pg002)
 
     def get_uncertainty_ki():
         nonlocal ki
@@ -91,7 +91,7 @@ def resolution_mono(ki):
 
 def resolution_tof(ki):
     distance1s = 15
-    velocity = neutron.wavenumber2velocity(ki)
+    velocity = nctx.wavenumber2velocity(ki)
     tof = distance1s / velocity
     open_angle = np.deg2rad(2)
 
@@ -190,7 +190,8 @@ uncertain_qx, uncertain_qy, uncertain_qz, uncertain_relative = resolution_primar
 plot_resolution(ki=wavenumber_in, dqx=uncertain_qx, dqy=uncertain_qy, dqz=uncertain_qz, dq_relative=uncertain_relative,
                 comp_type=TYPE_VELOCITY_SELECTOR)
 
-wavenumber_in = np.linspace(1e10, 10e10, num=100)
+wavelength_in = np.linspace(1e-10, 10e-10, num=100)
+wavenumber_in = nctx.wavelength2wavenumber(wavelength_in)
 uncertain_qx, uncertain_qy, uncertain_qz, uncertain_relative = resolution_primary(ki=wavenumber_in, comp_type=TYPE_TOF)
 plot_resolution(ki=wavenumber_in, dqx=uncertain_qx, dqy=uncertain_qy, dqz=uncertain_qz, dq_relative=uncertain_relative,
                 comp_type=TYPE_TOF)

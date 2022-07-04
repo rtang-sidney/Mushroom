@@ -2,6 +2,9 @@ import numpy as np
 
 import chopper_context as cctx
 import neutron_context as nctx
+import matplotlib.pyplot as plt
+
+plt.rcParams.update({'font.size': 20})
 
 
 # Given a reference resolution of ToF and the respective wavelength or wavenumber, the code checks if this is achievable
@@ -16,9 +19,15 @@ class ChopperInfo:
         :param ref_wavenumber: wavenumber where the time resolution is defined
         """
         if ref_wavelength:
-            self.velocity = nctx.wavelength2velocity(ref_wavelength)
+            if 1e-10 <= ref_wavelength <= 10e-10:
+                self.velocity = nctx.wavelength2velocity(ref_wavelength)
+            else:
+                raise ValueError("Wavelength outside the limit between 1 and 10 Ansgtrom.")
         elif ref_wavenumber:
-            self.velocity = nctx.wavenumber2velocity(ref_wavenumber)
+            if 1e-10 <= nctx.wavenumber2wavelength(ref_wavenumber) <= 10e-10:
+                self.velocity = nctx.wavenumber2velocity(ref_wavenumber)
+            else:
+                raise ValueError("Wavelength outside the limit between 1 and 10 Ansgtrom.")
         else:
             raise ValueError("Cannot calculate the reference velocity since neither wavelength or wavenumber is given.")
 
@@ -27,8 +36,8 @@ class ChopperInfo:
         resol_limit = self._uncertainty_limit_mechanical()
         if ref_resol_tof < resol_limit:
             raise RuntimeError(
-                "The target resolution {:.1f} % greater than {:.1f} % from mechanical limit.".format(
-                    ref_resol_tof * 1e2, resol_limit * 1e2))
+                "The target resolution {:.2f} % at {:.21f} AA greater than {:.2f} % from mechanical limit.".format(
+                    ref_resol_tof * 1e2, nctx.velocity2wavelength(self.velocity) * 1e10, resol_limit * 1e2))
         else:
             self.time_resol = ref_resol_tof
         self.open1 = open1
@@ -51,8 +60,46 @@ class ChopperInfo:
         return self.angle1_rad * self.velocity / (2 * np.pi * cctx.rpm2hz(cctx.mechanical_limit_rpm) * cctx.distance1s)
 
 
-chopper12 = ChopperInfo(2.7e-2, ref_wavelength=1e-10)
-print(chopper12.chopper1_rpm, chopper12.chopper2_rpm, chopper12.chopper2_rpm2)
-f1_threshold = (2 * np.pi / np.deg2rad(10) / 1.0 / 5.0 / cctx.distance1s - 1 / 5.0 / cctx.distance12 - np.deg2rad(
-    6) / np.deg2rad(10) / 1.0 / cctx.distance1s) / (cctx.tau_max - cctx.tau_min)
-print(cctx.hz2rpm(f1_threshold))
+# chopper12 = ChopperInfo(5e-2, ref_wavelength=1e-10)
+# print(chopper12.chopper1_rpm, chopper12.chopper2_rpm, chopper12.chopper2_rpm2)
+# f1_threshold = (2 * np.pi / np.deg2rad(10) / 1.0 / 5.0 / cctx.distance1s - 1 / 5.0 / cctx.distance12 - np.deg2rad(
+#     6) / np.deg2rad(10) / 1.0 / cctx.distance1s) / (cctx.tau_max - cctx.tau_min)
+# print(cctx.hz2rpm(f1_threshold))
+chopper1_rpms = []
+chopper2_rpms = []
+wavelengths = np.linspace(1e-10, 10e-10, 100)
+for wavelength in wavelengths:
+    chopper12 = ChopperInfo(5e-2, ref_wavelength=wavelength)
+    chopper1_rpms.append(chopper12.chopper1_rpm)
+    chopper2_rpms.append(chopper12.chopper2_rpm2)
+
+fig, ax = plt.subplots(figsize=(10, 6))
+ax.plot(wavelengths * 1e10, chopper1_rpms, label="Chopper 1, opening {:d} x {:d}°".format(5, 6))
+ax.plot(wavelengths * 1e10, chopper2_rpms, label="Chopper 2, opening {:d} x {:d}°".format(1, 10))
+ax.legend()
+ax.set_xlabel(r"Wavelength ($\mathrm{\AA}$)")
+ax.set_ylabel("Chopper frequency (RPM)")
+ax.set_title("Time resolution {:.0f} %".format(5e-2 * 1e2))
+ax.tick_params(axis="both", top=True, right=True, direction="in")
+fig.savefig("TOF//Chopper_Parameter_vs_Wavelength.png", bbox_inches='tight')
+plt.close(fig)
+
+chopper1_rpms = []
+chopper2_rpms = []
+wavelength = nctx.wavenumber2wavelength(1.1e10)
+resolutions = np.linspace(0.5e-2, 10e-2, num=100)
+for resolution in resolutions:
+    chopper12 = ChopperInfo(resolution, ref_wavelength=wavelength)
+    chopper1_rpms.append(chopper12.chopper1_rpm)
+    chopper2_rpms.append(chopper12.chopper2_rpm2)
+
+fig, ax = plt.subplots(figsize=(10, 6))
+ax.plot(resolutions * 1e2, chopper1_rpms, label="Chopper 1, opening {:d} x {:d}°".format(5, 6))
+ax.plot(resolutions * 1e2, chopper2_rpms, label="Chopper 2, opening {:d} x {:d}°".format(1, 10))
+ax.legend()
+ax.set_xlabel(r"Resolution * 100%")
+ax.set_ylabel("Chopper frequency (RPM)")
+ax.set_title("Reference wavelength {:.1f}".format(wavelength * 1e10) + r" $\mathrm{\AA}$")
+ax.tick_params(axis="both", top=True, right=True, direction="in")
+fig.savefig("TOF//Chopper_Parameter_vs_Resolution.png", bbox_inches='tight')
+plt.close(fig)

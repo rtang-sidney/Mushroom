@@ -21,17 +21,17 @@ def limit_mechanical(k, phi1, f1, d1s):
     return phi1 * ncxt.habr * k / (2 * np.pi * ncxt.mass_neutron * d1s * f1)
 
 
-u_rt = limit_frame_overlap(wavenumbers, ccxt.distance12, ccxt.distance1s, np.deg2rad(5), np.deg2rad(10), 5, 1,
+u_rt = limit_frame_overlap(wavenumbers, ccxt.distance12, ccxt.distance1s, np.deg2rad(5), np.deg2rad(10), 6, 1,
                            ccxt.tau_max, ccxt.tau_min)
-u_rt_f = limit_mechanical(wavenumbers, np.deg2rad(2), 10e3 / 60.0, ccxt.distance1s)
+u_rt_f = limit_mechanical(wavenumbers, np.deg2rad(6), 10e3 / 60.0, ccxt.distance1s)
 
 fig, ax = plt.subplots(figsize=(10, 6))
 # ax.plot(wavelengths * 1e10, u_rt * 100)
-ax.plot(wavenumbers * 1e-10, u_rt * 100, label="Frame-overlap limit")
-ax.plot(wavenumbers * 1e-10, u_rt_f * 100, label="Mechanical limit")
+ax.plot(wavelengths * 1e10, u_rt * 100, label="Frame-overlap limit")
+ax.plot(wavelengths * 1e10, u_rt_f * 100, label="Mechanical limit")
 ax.legend()
-ax.set_xlabel(r"Wavenumber $k_{i}$ ($\mathrm{\AA}^{-1})$")
-ax.set_ylabel(r"Relative uncertainty $\frac{\Delta t}{t}$")
+ax.set_xlabel(r"Wavelength ($\mathrm{\AA}$)")
+ax.set_ylabel(r"Minimal achievable $\frac{\Delta t}{t} * 100\%$")
 ax.tick_params(axis="both", top=True, right=True, direction="in")
 fig.savefig("Resolution\\ChopperResolution_Limit.png", bbox_inches='tight')
 plt.close(fig)

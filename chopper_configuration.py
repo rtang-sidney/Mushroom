@@ -4,8 +4,6 @@ import neutron_context as nctx
 from matplotlib.patches import Polygon
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 import chopper_context as cctx
-from chopper_context import wavelength2inversevelocity, inversevelocity2wavelength, rpm2hz, rpm2period, open_angle2time, \
-    opentime2angle, distance12, distance1s, wavelength_min, wavelength_max, tau_min, tau_max
 
 plt.rcParams.update({'font.size': 20})
 
@@ -16,18 +14,15 @@ plt.rcParams.update({'font.size': 20})
 # Reference(s): [Paper1] 10.1016/S0168-9002(03)01731-5
 
 
-CHOPPER_LIMIT = 10000  # rotation limit of a chopper in RMP, mainly due to mechanical stability
-OPEN_LIMIT = 5  # limit of the number of openings in a chopper
-
 WAVELENGTH_REF = nctx.wavenumber2wavelength(10e10)  # the reference wavelength to calculate the resolution
 
-TOF_REFERENCE = distance1s / nctx.wavelength2velocity(WAVELENGTH_REF)
+TOF_REFERENCE = cctx.distance1s / nctx.wavelength2velocity(WAVELENGTH_REF)
 RESOLUTION_REF = 2e-2  # the resolution in percentage to be achieved at the reference wavelength
 # Using the in-plane resolution at the secondary spectrometer 0.9589406504527286e-2
 
 OPEN_T1_THEORY = RESOLUTION_REF * TOF_REFERENCE
-RPM1 = CHOPPER_LIMIT
-OPEN1 = OPEN_LIMIT
+RPM1 = cctx.mechanical_limit_rpm
+OPEN1 = cctx.open_limit
 OPEN2 = 1
 
 
@@ -55,83 +50,128 @@ def check_overlap(ts_p4, ts_p1):
 def transmission_rate(n_combi, n2, open_t1, open_t2, tau_min, tau_max, repetition_t2):
     # n_combi: the number of combinations that are transmitted
     # n2: the total number of n2-values
-    return n_combi * 0.5 * open_t1 * open_t2 / (distance12 * n2 * repetition_t2 * (tau_max - tau_min))
+    return n_combi * 0.5 * open_t1 * open_t2 / (cctx.distance12 * n2 * repetition_t2 * (tau_max - tau_min))
 
 
-tau_ref = wavelength2inversevelocity(WAVELENGTH_REF)
+def get_parameters():
+    repetition_t1 = cctx.rpm2period(RPM1) / float(OPEN1)
+    open_angle1 = int(
+        np.rad2deg(cctx.opentime2angle(OPEN_T1_THEORY, frequency=cctx.rpm2hz(RPM1))))  # open angle as an integer
+    open_angle1 = np.deg2rad(open_angle1)
+    open_t1 = cctx.open_angle2time(open_angle=open_angle1, period_rot=repetition_t1 * OPEN1)
+    repetition_t2 = (cctx.distance1s - cctx.distance12) * (
+            repetition_t1 / cctx.distance12 + cctx.tau_max - cctx.tau_min)
+    open_t2 = (repetition_t1 - open_t1) * (1 - cctx.distance12 / cctx.distance1s)
+    freq2 = 1.0 / (repetition_t2 * OPEN2)
+    rpm2 = int(np.floor(freq2 * 60.0))
+    open_angle2 = int(np.rad2deg(open_t2 * rpm2 * 2.0 * np.pi / 60.0))
+    open_angle2 = np.deg2rad(open_angle2)
+    repetition_t2 = cctx.rpm2period(rpm=rpm2) / float(OPEN2)
+    open_t2 = cctx.open_angle2time(open_angle=open_angle2, period_rot=repetition_t2 * OPEN2)
 
-repetition_t1 = rpm2period(RPM1) / float(OPEN1)
-open_angle1 = int(np.rad2deg(opentime2angle(OPEN_T1_THEORY, frequency=rpm2hz(RPM1))))  # open angle as an integer
-open_angle1 = np.deg2rad(open_angle1)
-open_t1 = open_angle2time(open_angle=open_angle1, period_rot=repetition_t1 * OPEN1)
-repetition_t2 = (distance1s - distance12) * (repetition_t1 / distance12 + tau_max - tau_min)
-open_t2 = (repetition_t1 - open_t1) * (1 - distance12 / distance1s)
-freq2 = 1.0 / (repetition_t2 * OPEN2)
-rpm2 = int(np.floor(freq2 * 60.0))
-open_angle2 = int(np.rad2deg(open_t2 * rpm2 * 2.0 * np.pi / 60.0))
-open_angle2 = np.deg2rad(open_angle2)
-repetition_t2 = rpm2period(rpm=rpm2) / float(OPEN2)
-open_t2 = open_angle2time(open_angle=open_angle2, period_rot=repetition_t2 * OPEN2)
+    print("bl, self_minus, self_plus, bh:", open_t1 * (1 - cctx.distance12 / cctx.distance1s), repetition_t2 - open_t2,
+          repetition_t2 + open_t2, (repetition_t1 - open_t1) * (1 - cctx.distance12 / cctx.distance1s))
 
-print("bl, self_minus, self_plus, bh:", open_t1 * (1 - cctx.distance12 / cctx.distance1s), repetition_t2 - open_t2,
-      repetition_t2 + open_t2, (repetition_t1 - open_t1) * (1 - distance12 / distance1s))
+    # w1, w2 = open_t1 / 2.0, open_t2 / 2.0  # the parameters as defined in [Paper1]
 
+    print(
+        "Chopper1 {:d} RPM, openings {:d} x {:.0f}°; Chopper2 {:d} RPM, openings {:d} x {:.0f}°".format(
+            RPM1, OPEN1, np.rad2deg(open_angle1), rpm2, OPEN2, np.rad2deg(open_angle2)))
+    print("Maximal possible transmission rate", open_t1 * open_t2 / (2.0 * repetition_t1 * repetition_t2))
+    return RPM1, rpm2, open_angle1, open_angle2, repetition_t1, repetition_t2, open_t1, open_t2
+
+
+def remove_overlap():
+    n1_1d = np.arange(int(repetition_t2 / repetition_t1 * n2_1d.shape[0]))
+    n1_2d, n2_2d = np.meshgrid(n1_1d, n2_1d)
+    print(n1_1d.shape, n2_1d.shape, repetition_t2 / repetition_t1)
+
+    n1n2 = n2_2d * repetition_t2 - n1_2d * repetition_t1
+    tau_accepted = cctx.tau_min + n1n2 / cctx.distance12
+    print(tau_accepted.shape)
+
+    boundary_low = tau_accepted >= cctx.tau_min
+    boundary_high = tau_accepted <= cctx.tau_max
+    interest = np.logical_and(boundary_low, boundary_high)
+
+    n1_interest, n2_interest = n1_2d[interest], n2_2d[interest]
+    tau_accepted = tau_accepted[interest]
+
+    tau_p1 = cctx.tau_min + (n2_interest * repetition_t2 - n1_interest * repetition_t1 - w1 - w2) / cctx.distance12
+    tau_p2 = cctx.tau_min + (n2_interest * repetition_t2 - n1_interest * repetition_t1 + w1 - w2) / cctx.distance12
+    tau_p3 = cctx.tau_min + (n2_interest * repetition_t2 - n1_interest * repetition_t1 - w1 + w2) / cctx.distance12
+    tau_p4 = cctx.tau_min + (n2_interest * repetition_t2 - n1_interest * repetition_t1 + w1 + w2) / cctx.distance12
+
+    ts_p1 = tau_p1 * cctx.distance1s + repetition_t1 * n1_interest + w1
+    ts_p2 = tau_p2 * cctx.distance1s + repetition_t1 * n1_interest - w1
+    ts_p3 = tau_p3 * cctx.distance1s + repetition_t1 * n1_interest + w1
+    ts_p4 = tau_p4 * cctx.distance1s + repetition_t1 * n1_interest - w1
+
+    if_overlap = check_overlap(ts_p4, ts_p1)
+    print("Overlap: {}".format(if_overlap))
+    return n1_interest, n2_interest, tau_accepted, tau_p1, tau_p2, tau_p3, tau_p4, ts_p1, ts_p2, ts_p3, ts_p4, if_overlap
+
+
+tau_ref = cctx.wavelength2inversevelocity(WAVELENGTH_REF)
+rpm1, rpm2, open_angle1, open_angle2, repetition_t1, repetition_t2, open_t1, open_t2 = get_parameters()
+# repetition_t1 = cctx.rpm2period(RPM1) / float(OPEN1)
+# repetition_t2 = cctx.rpm2period(rpm=rpm2) / float(OPEN2)
+# open_t1 = cctx.open_angle2time(open_angle=open_angle1, period_rot=repetition_t1 * OPEN1)
+# open_t2 = cctx.open_angle2time(open_angle=open_angle2, period_rot=repetition_t2 * OPEN2)
 w1, w2 = open_t1 / 2.0, open_t2 / 2.0  # the parameters as defined in [Paper1]
 
-print(
-    "Chopper1 {:d} RPM, openings {:d} x {:.0f}°; Chopper2 {:d} RPM, openings {:d} x {:.0f}°".format(
-        RPM1, OPEN1, np.rad2deg(open_angle1), rpm2, OPEN2, np.rad2deg(open_angle2)))
-print("Maximal possible transmission rate", open_t1 * open_t2 / (2.0 * repetition_t1 * repetition_t2))
+# RPMS = [RPM1, rpm2]
+# OPENINGS = [OPEN1, OPEN2]
+# open_angles = [open_angle1, open_angle2]
 
-RPMS = [RPM1, rpm2]
-OPENINGS = [OPEN1, OPEN2]
-open_angles = [open_angle1, open_angle2]
+wavelengths = np.linspace(cctx.wavelength_min, cctx.wavelength_max, 100)
 
-wavelengths = np.linspace(wavelength_min, wavelength_max, 100)
-
-print(open_t2 * distance1s / distance12 + open_t1 * (distance1s / distance12 - 1))
-print(repetition_t1 * (distance1s / distance12 - 1), repetition_t2 - (tau_max - tau_min) * (distance1s - distance12))
+print(open_t2 * cctx.distance1s / cctx.distance12 + open_t1 * (cctx.distance1s / cctx.distance12 - 1))
+print(repetition_t1 * (cctx.distance1s / cctx.distance12 - 1),
+      repetition_t2 - (cctx.tau_max - cctx.tau_min) * (cctx.distance1s - cctx.distance12))
 
 n2_1d = np.arange(10)
-n1_1d = np.arange(int(repetition_t2 / repetition_t1 * n2_1d.shape[0]))
-n1_2d, n2_2d = np.meshgrid(n1_1d, n2_1d)
-print(n1_1d.shape, n2_1d.shape, repetition_t2 / repetition_t1)
+n1_pass, n2_pass, tau_pass, tau_p1, tau_p2, tau_p3, tau_p4, ts_p1, ts_p2, ts_p3, ts_p4, if_overlap = remove_overlap()
 
-n1n2 = n2_2d * repetition_t2 - n1_2d * repetition_t1
-tau_accepted = tau_min + n1n2 / distance12
-print(tau_accepted.shape)
+# n1_1d = np.arange(int(repetition_t2 / repetition_t1 * n2_1d.shape[0]))
+# n1_2d, n2_2d = np.meshgrid(n1_1d, n2_1d)
+# print(n1_1d.shape, n2_1d.shape, repetition_t2 / repetition_t1)
+#
+# n1n2 = n2_2d * repetition_t2 - n1_2d * repetition_t1
+# tau_accepted = cctx.tau_min + n1n2 / cctx.distance12
+# print(tau_accepted.shape)
+#
+# boundary_low = tau_accepted >= cctx.tau_min
+# boundary_high = tau_accepted <= cctx.tau_max
+# interest = np.logical_and(boundary_low, boundary_high)
+#
+# n1_interest, n2_interest = n1_2d[interest], n2_2d[interest]
+# tau_accepted = tau_accepted[interest]
+#
+# tau_p1 = cctx.tau_min + (n2_interest * repetition_t2 - n1_interest * repetition_t1 - w1 - w2) / cctx.distance12
+# tau_p2 = cctx.tau_min + (n2_interest * repetition_t2 - n1_interest * repetition_t1 + w1 - w2) / cctx.distance12
+# tau_p3 = cctx.tau_min + (n2_interest * repetition_t2 - n1_interest * repetition_t1 - w1 + w2) / cctx.distance12
+# tau_p4 = cctx.tau_min + (n2_interest * repetition_t2 - n1_interest * repetition_t1 + w1 + w2) / cctx.distance12
+#
+# ts_p1 = tau_p1 * cctx.distance1s + repetition_t1 * n1_interest + w1
+# ts_p2 = tau_p2 * cctx.distance1s + repetition_t1 * n1_interest - w1
+# ts_p3 = tau_p3 * cctx.distance1s + repetition_t1 * n1_interest + w1
+# ts_p4 = tau_p4 * cctx.distance1s + repetition_t1 * n1_interest - w1
+#
+# if_overlap = check_overlap(ts_p4, ts_p1)
+# print("Overlap: {}".format(if_overlap))
 
-boundary_low = tau_accepted >= tau_min
-boundary_high = tau_accepted <= tau_max
-interest = np.logical_and(boundary_low, boundary_high)
+index_ref = np.argmin(np.abs(tau_pass - tau_ref))
+print("For ki = 1.1 AA-1, n1 = {}, n2 = {}".format(n1_pass[index_ref], n2_pass[index_ref]))
 
-n1_interest, n2_interest = n1_2d[interest], n2_2d[interest]
-tau_accepted = tau_accepted[interest]
-
-tau_p1 = tau_min + (n2_interest * repetition_t2 - n1_interest * repetition_t1 - w1 - w2) / distance12
-tau_p2 = tau_min + (n2_interest * repetition_t2 - n1_interest * repetition_t1 + w1 - w2) / distance12
-tau_p3 = tau_min + (n2_interest * repetition_t2 - n1_interest * repetition_t1 - w1 + w2) / distance12
-tau_p4 = tau_min + (n2_interest * repetition_t2 - n1_interest * repetition_t1 + w1 + w2) / distance12
-
-ts_p1 = tau_p1 * distance1s + repetition_t1 * n1_interest + w1
-ts_p2 = tau_p2 * distance1s + repetition_t1 * n1_interest - w1
-ts_p3 = tau_p3 * distance1s + repetition_t1 * n1_interest + w1
-ts_p4 = tau_p4 * distance1s + repetition_t1 * n1_interest - w1
-
-if_overlap = check_overlap(ts_p4, ts_p1)
-print("Overlap: {}".format(if_overlap))
-
-index_ref = np.argmin(np.abs(tau_accepted - tau_ref))
-print("For ki = 1.1 AA-1, n1 = {}, n2 = {}".format(n1_interest[index_ref], n2_interest[index_ref]))
-
-lambda_p1 = inversevelocity2wavelength(tau_p1)
-lambda_p2 = inversevelocity2wavelength(tau_p2)
-lambda_p3 = inversevelocity2wavelength(tau_p3)
-lambda_p4 = inversevelocity2wavelength(tau_p4)
+lambda_p1 = cctx.inversevelocity2wavelength(tau_p1)
+lambda_p2 = cctx.inversevelocity2wavelength(tau_p2)
+lambda_p3 = cctx.inversevelocity2wavelength(tau_p3)
+lambda_p4 = cctx.inversevelocity2wavelength(tau_p4)
 
 fig, ax = plt.subplots(figsize=(10, 6))
 color = next(ax._get_lines.prop_cycler)['color']
-for i in range(tau_accepted.shape[0]):
+for i in range(tau_pass.shape[0]):
     parallelogram = Polygon(np.array(
         [[lambda_p1[i] * 1e10, ts_p1[i]], [lambda_p2[i] * 1e10, ts_p2[i]],
          [lambda_p4[i] * 1e10, ts_p4[i]], [lambda_p3[i] * 1e10, ts_p3[i]]]), color=color)
@@ -163,7 +203,8 @@ connects[2].set_visible(False)
 connects[3].set_visible(False)
 
 if if_overlap is False:
-    rate = transmission_rate(n1_interest.shape[0], n2_1d.shape[0], open_t1, open_t2, tau_min, tau_max, repetition_t2)
+    rate = transmission_rate(n1_pass.shape[0], n2_1d.shape[0], open_t1, open_t2, cctx.tau_min, cctx.tau_max,
+                             repetition_t2)
 
     ax.text(1.01, 1, "Chopper 1\n{:d} RPM\n{:d} x {:.0f}°\n\n".format(RPM1, OPEN1, np.rad2deg(
         open_angle1)) + "Chopper 2\n{:d} RPM\n{:d} x {:.0f}°\n\n".format(rpm2, OPEN2, np.rad2deg(
@@ -171,10 +212,10 @@ if if_overlap is False:
     print("Transmission rate: {:.2f}%".format(rate * 1e2))
     print("Filename:",
           "TOF//{:d}_{:d}x{:.0f}_{:d}_{:d}x{:.0f}_{:d}m.png".format(RPM1, OPEN1, np.rad2deg(open_angle1), rpm2, OPEN2,
-                                                                    np.rad2deg(open_angle2), distance12))
+                                                                    np.rad2deg(open_angle2), cctx.distance12))
     fig.savefig(
         "TOF//{:d}_{:d}x{:.0f}_{:d}_{:d}x{:.0f}_{:d}m.png".format(RPM1, OPEN1, np.rad2deg(open_angle1), rpm2, OPEN2,
-                                                                  np.rad2deg(open_angle2), distance12),
+                                                                  np.rad2deg(open_angle2), cctx.distance12),
         bbox_inches='tight')
 # plt.show()
 plt.close(fig)

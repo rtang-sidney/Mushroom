@@ -93,7 +93,7 @@ def resolution_tof(ki):
     distance1s = 15
     velocity = nctx.wavenumber2velocity(ki)
     tof = distance1s / velocity
-    open_angle = np.deg2rad(2)
+    open_angle = np.deg2rad(12)
 
     rpm = 10000
     period = 1.0 / (rpm / 60.0)

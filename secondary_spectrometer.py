@@ -53,8 +53,8 @@ def uncert_azi(geo_ctx: MushroomContext, an_ind):
     # sa: sample-analyser; af: analyser-focus
     distance_sa = geo.points_distance(point1=geo_ctx.sa_point, point2=an_point)
     distance_af = geo.points_distance(point1=an_point, point2=geo_ctx.foc_point)
-    uncert_azi_sa = 2.0 * np.arctan((instr.an_seg + instr.sam_dia) / (2.0 * distance_sa))
-    uncert_azi_af = 2.0 * np.arctan((instr.an_seg + geo_ctx.foc_size) / (2.0 * distance_af))
+    uncert_azi_sa = 2.0 * np.arctan((geo_ctx.an_seg + instr.sam_dia) / (2.0 * distance_sa))
+    uncert_azi_af = 2.0 * np.arctan((geo_ctx.an_seg + geo_ctx.foc_size) / (2.0 * distance_af))
     return min(uncert_azi_sa, uncert_azi_af)
 
 
@@ -71,7 +71,7 @@ def an_diver_vert(geo_ctx: MushroomContext, an_ind):
     vector_sa = geo.points2vector(p_start=geo_ctx.sa_point, p_end=an_point)
     vector_af = geo.points2vector(p_start=an_point, p_end=geo_ctx.foc_point)
     vector_tangential = geo.vector_bisector(vector_sa, vector_af)
-    segment_analyser = geo.unit_vector(vector_tangential) * instr.an_seg
+    segment_analyser = geo.unit_vector(vector_tangential) * geo_ctx.an_seg
     an_in_proj = geo.vector_project_a2b(segment_analyser, vector_sa)
     an_in_rej = segment_analyser - an_in_proj  # rejection
     an_out_proj = geo.vector_project_a2b(segment_analyser, vector_af)
@@ -202,8 +202,8 @@ def mcstas_analyser(geo_ctx: MushroomContext):
     # to write the file giving the information of the analyser array for the McStas simulation
     mcstas_fname = "".join([glb.path_mcstas, geo_ctx.filename_mcstas])
     f = open(mcstas_fname, 'w+')
-    value_width_z = instr.an_seg
-    value_height_y = instr.an_seg
+    value_width_z = geo_ctx.an_seg
+    value_height_y = geo_ctx.an_seg
     value_mosaic_horizontal = geo.deg2min(np.rad2deg(instr.moasic_an))
     value_mosaic_vertical = geo.deg2min(np.rad2deg(instr.moasic_an))
     value_lattice_distance = instr.interplanar_pg002 * 1e10  # it is in angstrom for McStas
@@ -235,7 +235,6 @@ def mcstas_analyser(geo_ctx: MushroomContext):
 
 def kf_resolution(geo_ctx: MushroomContext):
     # the components are calculated in the coordinate system used on McStas
-
     resol_qvec = np.array(
         list(map(lambda i: kf_resol_mcstas(geo_ctx=geo_ctx, index_now=i), range(geo_ctx.pol_angles.shape[0]))))
     resol_qvec = resol_qvec.transpose()
@@ -261,7 +260,6 @@ def kf_resolution(geo_ctx: MushroomContext):
     ax2.tick_params(axis="y", direction="in")
     ax2.set_ylabel(r"$\dfrac{\Delta k_f}{k_f}$ * 100%", color=colour_ax2)
     ax2.tick_params(axis='y', color=colour_ax2, labelcolor=colour_ax2)
-    # ax2.legend(labelcolor=colour_ax2, loc='lower left', bbox_to_anchor=(0, 0.5), framealpha=0.5)
     ax.set_title('Secondary spectrometer')
     filename = "".join([glb.path_resolution, geo_ctx.filename_res])
     filename = ".".join([filename, glb.extension_png])
@@ -271,13 +269,42 @@ def kf_resolution(geo_ctx: MushroomContext):
               glb.colour_x, glb.colour_y, glb.colour_z, colour_ax2))
 
 
+def an2resol(geo_ctx: MushroomContext):
+    fig, ax = plt.subplots()
+    for seg in np.linspace(1e-2, 5e-2, 5):
+        geocnx = MushroomContext(seg)
+        resol_kf = np.array(
+            list(map(lambda i: uncert_kf(geo_ctx=geocnx, an_ind=i) *
+                               spread_factor_detector(geo_ctx=geocnx, index_now=i)[
+                                   0], range(geocnx.pol_angles.shape[0]))))
+        # print(list(map(lambda i: uncert_kf(geo_ctx=geocnx, an_ind=i), range(geocnx.pol_angles.shape[0]))))
+        # print(list(
+        #     map(lambda i: spread_factor_detector(geo_ctx=geocnx, index_now=i)[0], range(geocnx.pol_angles.shape[0]))))
+        pol_deg = np.rad2deg(geocnx.pol_angles)
+        ax.plot(pol_deg, resol_kf * 1e-10,
+                label="{:.0f} cm, {:d}".format(geocnx.an_seg * 1e2, pol_deg.shape[0]))  #: along $k_f$
+    secax = ax.secondary_yaxis('right', functions=(
+        lambda x: x / geo_ctx.wavenumber_f * 1e2 * 1e10, lambda x: x * 1e-2 * geo_ctx.wavenumber_f * 1e-10))
+    secax.set_ylabel('Relative uncertainty (%)')
+    ax.set_xlabel(r'Polar angle (degree)')
+    ax.set_ylabel(r"Uncertainty $\Delta k_{f}$ ($\AA^{-1}$)")
+
+    ax.tick_params(axis="both", direction="in")
+
+    ax.set_title('Resolution - analyser segment sizes')
+    ax.legend(loc='upper left', bbox_to_anchor=(1.15, 1))
+    filename = "Resolution\AnalyserSizes"
+    filename = ".".join([filename, glb.extension_png])
+    plt.savefig(filename, bbox_inches='tight')
+
+
 def spread_factor_detector(geo_ctx: MushroomContext, index_now):
     an_point = geo_ctx.an_points[:, index_now]
     detector_now = geo_ctx.dete_points[:, index_now]
     detector_next = geo_ctx.dete_points[:, index_now + 1]
     spread_factor_polar = max(1, instr.detector_resolution / geo.points_distance(detector_now, detector_next))
 
-    detector_spread_azi = instr.an_seg * geo.points_distance(detector_now, geo_ctx.foc_point) / geo.points_distance(
+    detector_spread_azi = geo_ctx.an_seg * geo.points_distance(detector_now, geo_ctx.foc_point) / geo.points_distance(
         an_point, geo_ctx.foc_point)
     spread_factor_azi = max(1, instr.detector_resolution / detector_spread_azi)
     return spread_factor_polar, spread_factor_azi
@@ -307,7 +334,7 @@ def plot_distances(geo_ctx: MushroomContext):
     distances_sa = np.array(list(
         map(lambda i: geo.points_distance(point1=geo_ctx.sa_point, point2=geo_ctx.an_points[:, i]),
             range(geo_ctx.pol_angles.shape[0]))))
-    azi_angs = np.rad2deg(2 * np.arctan(instr.an_seg * 0.5 / distances_sa))
+    azi_angs = np.rad2deg(2 * np.arctan(geo_ctx.an_seg * 0.5 / distances_sa))
 
     distances_sd = np.array(list(map(lambda i: distance_sd(geo_ctx, i), range(geo_ctx.pol_angles.shape[0]))))
     print(np.max(distances_sd), np.min(distances_sd))
@@ -366,7 +393,7 @@ def plot_distances(geo_ctx: MushroomContext):
 
 
 geometryctx = MushroomContext()
-print(geometryctx.pol_angles.shape[0])
+# print(geometryctx.pol_angles.shape[0])
 # write_an_segs(geo_ctx=geometryctx)
 # print("The prefix of the middle segment of the polar angle range: {:d}".format(int(geometryctx.pol_middle_index)))
 # print(geometryctx.analyser_points[:, :10])
@@ -376,7 +403,8 @@ print(geometryctx.pol_angles.shape[0])
 
 # plot_analyser_comparison(geo_ctx=geometryctx)
 
-kf_resolution(geo_ctx=geometryctx)
+# kf_resolution(geo_ctx=geometryctx)
+an2resol(geo_ctx=geometryctx)
 # plot_distances(geo_ctx=geometryctx)
 
 # write_mcstas(geo_ctx=geometryctx)

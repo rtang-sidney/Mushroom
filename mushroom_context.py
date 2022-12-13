@@ -10,11 +10,13 @@ PART_LOW = "low"
 
 
 class MushroomContext(object):
-    def __init__(self):
+    def __init__(self, an_seg=1e-2):
         self.sa_point = (0.0, 0.0)  # m
         self.foc_point = (0.8, -0.4)
 
-        self.foc_size = 1e-2  # m
+        self.foc_size = an_seg#1e-2  # m
+        self.an_seg = an_seg  # m, the size of an analyser segment in 1D
+
         self.wavenumber_f = 1.1e10  # a constant outgoing wavenumber
         self.wavelength_f = nctx.wavenumber2wavelength(self.wavenumber_f)
 
@@ -94,7 +96,7 @@ class MushroomContext(object):
 
         while np.arctan2(point_now[1], point_now[0]) > self.pol_minus:
             # the end point is included, since the last point is the outside the threshold
-            seg_now = orient_now * instr.an_seg
+            seg_now = orient_now * self.an_seg
             seg_end = point_now + seg_now  # update the next point
             vec_sa_now = geo.points2vector(p_start=self.sa_point, p_end=seg_end)
             point_now, orient_now = self._cal_an_point(vec_sa=vec_sa_now)
